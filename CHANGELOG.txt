@@ -1,0 +1,856 @@
+PhoenixRPU change log (v21, 2026-10-28_1927 Pacific)
+
+VERSION HISTORY
+v0  Your uploaded sketch (backbox status lamps, attract light show). Flippers never turned on.
+v1  Flipper fix: RPU_SetDisableFlippers(false) at the start of each ball; flippers off at game over.
+v2  Original Phoenix sounds: PlayScoreSounds() pulses the 10/100/1,000/10,000 sound coils (solenoids 9-12)
+    once per unit scored whenever a player's score goes up. Strength 2, 90 ms apart, max 5 pulses per sound.
+v3  Drop-target reset pulse DROP_TARGET_RESET_STRENGTH 10 -> 30 (ms).
+v4  Free play forced on at every power-up; MaximumCredits 40 -> 8; during ball 1 each Start press adds a player
+    (up to 4), further presses add a credit (up to 8); AddCredit() always shows the credit count.
+v5  Switch/sound audit against the manual's switch matrix (Figure 9). Every scoring switch already played its
+    stock sound through the score coils, except the end-of-ball bonus countdown: it added 1,000 per step with
+    no original sound. Now each bonus step pulses the 1,000 sound. New scenario 07-bonus-sounds.sim.
+v6  Drop targets were pushed up but not latching. Reset pulse DROP_TARGET_RESET_STRENGTH 30 -> 50 ms, and the
+    right bank now resets 300 ms after the left (DROP_BANK_RESET_STAGGER_MS) so the four big coils don't all fire
+    together and starve each other of current. Scenario 08 (bonus countdown timing, worst case under 30 s) added in
+    the test suite; no sketch change for it.
+v7  Root cause for the weak drop-target reset: on the System Alpha (rev 200) the RPU library forces every coil push
+    to a single pulse and ignores the "strength" number, so the 10 -> 30 -> 50 changes in v3/v6 had no effect.
+    The pulse length is set only by RPU_SetSolenoidDefaultPulse(). The sketch never called it. Now called once
+    after RPU_InitializeMPU() for all six drop-target reset coils (SOL_DROP_L_TOP/BOTTOM, R_TOP/BOTTOM,
+    CENTER_LEFT/RIGHT) with DROP_TARGET_RESET_PULSE_MS = 60. The 300 ms bank stagger from v6 is kept.
+    (v7 confirmed working on the machine: drop targets reset and latch; coils hit slightly harder than stock.)
+v8  Game over tune on the original sound board: when the last ball ends, the four chimes play as a descending run
+    (10,000 / 1,000 / 100 / 10) and the 10,000 chime once more, 220 ms apart (PlayGameOverTune(),
+    GAME_OVER_TUNE_NOTE_MS, GAME_OVER_TUNE_ENABLED). New scenario 09-game-over-tune.sim.
+    Drop reset pulse unchanged at DROP_TARGET_RESET_PULSE_MS = 60.
+v9  Scoring matched to readings from the stock game: single drop target 100 -> 1,000 (SCORE_DROP_TARGET);
+    completing a bank 1,100 -> 10,000 in all (SCORE_DROP_BANK_COMPLETE 1,000 -> 9,000, on top of the 1,000 for the
+    last target). Center drop targets already matched (10,000). New scenario 10-drop-scores.sim.
+v10 Bullseye scoring checked against stock readings: PH lit = 10,000 and PHO lit = 20,000 already matched the
+    letter table (P/H 10,000, O/E 20,000, N/I 30,000, X 40,000, as printed on the playfield). Stock gave 60,000 with
+    P-H-O-E lit and the extra ball lit, so collecting the lit extra ball at the bullseye now also scores
+    SCORE_BULLSEYE_EXTRA_BALL = 40,000 on top of the letter value (20,000 + 40,000 = 60,000). Only when the extra
+    ball is actually awarded. Inferred from that one reading. New scenario 11-bullseye-scores.sim.
+v11 Repeatable PHOENIX. With P-H-O-E-N-I-X all lit, completing 1-5 again turns every letter off (and X and the outside
+    specials) and starts a new round (the first set of a round spots P and H together, like the start of a game).
+    Each completion is counted per player (PhoenixCompletions). From the moment of completion, and every 30 seconds
+    after (PHOENIX_BLINK_INTERVAL_MS), all seven lamps blink once per completion (on 250 ms, off 250 ms,
+    PHOENIX_BLINK_PERIOD_MS), then the lamps go back to showing progress. Two completions = two blinks per interval.
+    The count resets each new game. A lit Extra Ball When Lit is kept through a restart. New scenarios
+    12-phoenix-complete.sim and 13-phoenix-complete-twice.sim.
+v12 Fewer extra balls. (1) The limit is now 5 extra balls per player per GAME in total (new ExtraBallsAwarded counter,
+    reset each game); before, it only limited how many were held at once, so playing one off let you earn another.
+    (2) The outside rollover special (after I) is a one-shot: collecting it turns it off and the next completion of 1-5
+    lights it again; before, it paid out on every hit of the lit lane. (3) EXTRA BALL WHEN LIT is lit only when E is
+    spotted (so once per PHOENIX round); before, it relit after every completion of 1-5 from E on.
+    Extra ball sources now: bullseye with the lamp lit, bullseye with X lit (special), outside rollover special.
+    Score awards (330,000 / 500,000) and match are credits, not extra balls. Scenario 03-extra-ball-cap.sim rewritten.
+v13 One letter per completion of 1-5. The first completion used to spot P and H together; now it spots only P, and
+    every completion after that spots exactly one letter: P, H, O, E, N, I, then X (seven completions), and the eighth
+    completes PHOENIX and starts over (v11). Extra Ball When Lit now lights on the fourth completion (E) instead of the
+    third. Scenarios 02, 03, 11, 12 and 13 updated for the new count. Note: the playfield's kickers and side targets
+    also light numbers ("LITES 2/3/4"), so a set of 1-5 can be completed without hitting every rollover.
+v14 Build check. Reported: P and H lit together on the first completion of 1-5, which v13 cannot do (the simulator
+    and the code spot one letter per completion), so the board may still be running an older build. No rule changes.
+    The sketch version (14) now shows on the credits display for the first 8 seconds after power-up
+    (SKETCH_VERSION), and "PhoenixRPU build 14" prints on the serial port. Bump SKETCH_VERSION with each build.
+    New scenario 14-version-display.sim.
+v15 Between games (attract / game over) score displays 2-4 stay blank; only display 1 is used (power-up game version
+    2026, then the high score and the last game's player 1 score, alternating). Displays 2-4 light up again as players
+    are added in a game. SKETCH_VERSION is now 15 (shown on the credits display at power-up). The attract code no
+    longer writes display 1-4 all at once (Display_UpdateDisplays(0xFF) became display 0 only) and blanks displays 2-4
+    each pass. New scenario 15-blank-displays-between-games.sim (two-player game played out, then displays checked
+    during the match and in attract).
+v16 Scores over 1,000,000: instead of blinking, the whole total (millions + six digits) scrolls in from the right
+    across the display, rests on the normal score for 10 seconds, then scrolls again. Works in play and for the last
+    game's score on display 1 in attract. Between games the attract light show now starts after 30 seconds of
+    no switch activity (was 60), then follows the normal pattern (60 s show, 3 min dark, repeat, dark after 30 min).
+    Build number 16 (shown in credits at power-up).
+v17 Nothing scores, and the ball does not count as played, until it has been plunged and reaches one of the
+    1-5 rollovers. A ball that drains before that is simply served again. Stops phantom points (about 1,400)
+    when the ball is fed to the shooter lane and the drop banks reset. Header comment now states the version
+    and what is new. Build number 17.
+v18 Drop banks (4 targets each side) now always stand back up once all four are down. Cause: v17's "nothing scores
+    before the first 1-5 rollover" rule returned early for EVERY switch, including drop targets, so a target that
+    went down before the ball reached a rollover (the right bank sits next to the shooter lane) was never counted;
+    the bank then never saw its 4th target and stayed down. Fixes: (1) drop-target hits made before the first
+    rollover are counted quietly (no points, no bonus, ball still unplayed) and a bank completed that way resets;
+    (2) the reset after the 4th target is now 100 ms (DROP_BANK_COMPLETE_RESET_DELAY_MS, was 500 ms);
+    (3) backstop CheckDropBankBackstop(): if all four switches of a bank stay closed for 250 ms and no reset was
+    asked for in the last 2.5 s, the bank is reset (no points), at most 3 times per bank per ball so a stuck
+    switch cannot fire the coils forever. Also: the serial monitor (115200) now prints every number lamp change
+    ("Number 2 lit, lamps now 02"), "1-5 complete: number lamps cleared", the letter count after each spot, and
+    "PHOENIX complete: all letters off" -- added to chase the report of lamp 2 going out with no letter; the
+    simulator could not reproduce that one, so the log will show what the code did. Build number 18.
+    New scenarios 20-bank-after-rollover, 21-bank-hits-before-rollover (failed on v17, passes now),
+    22-gate-still-holds, 23-bank-stuck-down.
+v19 The bottom inlanes (left and right INSIDE rollovers) now light the "2" and "4" number lamps, exactly as the
+    top "2" and "4" rollovers do. Before, they scored 1,000, advanced the bonus and reset the centre drop target
+    but never lit a number, so a hit looked like it had not counted and the top rollover then scored the number
+    later (reported on v16 and v18). Per the handbook, the left and right inside rollovers pair with the left and
+    right centre drop targets, as "2" and "4" do. The outside rollovers are unchanged. Build number 19.
+    New scenario 36-inside-rollovers-light-2-4 (fails on v18, passes now). Rules otherwise identical to v18.
+v20 The "nothing scores until the first 1-5 rollover" rule (v17) now applies to BALL 1 ONLY, and on ball 1 the
+    spinner also counts as a first hit, because a first ball can miss the top rollovers and go down the ramp to the
+    spinner. From ball 2 on (any player) every switch scores immediately. Trade-off: on balls 2 and up the ball is
+    "in play" from its first switch of any kind, so a ball that drains after only switch noise during the feed is no
+    longer served again, and the early phantom points seen on ball 1 before v17 can come back on later balls.
+    Build number 20. New scenarios 24-ball1-spinner-opens and 25-ball2-scores-immediately (both fail on v19);
+    22-gate-still-holds now checks drop targets and a jet only (the spinner no longer belongs in it).
+v21 Drop banks never stood back up mid-ball from ball 2 on (they stayed down until the next ball started). Cause:
+    CountdownBonus() switches the solenoid stack off at the end of every ball, and only InitGamePlay() (start of a
+    GAME) switched it back on. A solenoid push made without the "override" flag is silently dropped while the stack is
+    off, and the bank resets (RequestDropBankReset, and the v18 backstop) are made without it. The resets at the
+    start of each ball and the ball serve use the override flag, which is why those always worked. Fix: InitNewBall()
+    now calls RPU_EnableSolenoidStack(). This bug is older than v17 and also hit v16 and earlier on balls 2+.
+    New scenario 26-bank-resets-ball2 (fails on v20, passes now). Build number 21.
+
+==============================================================================
+LATEST (v21) vs PREVIOUS (v20)
+==============================================================================
+--- d/v20-ball1-gate.ino	2026-10-29 02:27:12.435743563 +0000
++++ d/v21-solenoid-stack.ino	2026-10-29 02:27:12.437330837 +0000
+@@ -1,10 +1,10 @@
+ /**************************************************************************
+     PhoenixRPU - custom rules for Williams Phoenix (1978)
+-    VERSION: v20 (SKETCH_VERSION 20, shown on the credits display at power-up)
+-    NEW IN THIS VERSION (vs v19): the "nothing scores until the ball reaches a 1-5 rollover" rule now applies to
+-    BALL 1 ONLY, and on ball 1 the spinner counts as well as the 1-5 rollovers (a first ball can miss the top
+-    rollovers and go down the ramp to the spinner). From ball 2 on, every switch scores right away.
+-    (Still from v19: the bottom inlanes light the "2" and "4" number lamps.)
++    VERSION: v21 (SKETCH_VERSION 21, shown on the credits display at power-up)
++    NEW IN THIS VERSION (vs v20): from ball 2 on, the drop target banks (and anything else fired without the
++    "override" flag) were never reset mid-ball: the bonus countdown at the end of each ball switches the solenoid
++    stack off, and only the start of a GAME switched it back on. Each new ball now switches it on again.
++    (Still from v20: the first-hit rule is ball 1 only, spinner counts. From v19: inlanes light "2" and "4".)
+     Change history: see the PhoenixRPU-CHANGELOG text file delivered with each version.
+ 
+     This pinball code is distributed in the hope that it
+@@ -703,7 +703,7 @@
+   // Set up the chips and interrupts
+   unsigned long initResult = 0;
+   if (DEBUG_MESSAGES) Serial.write("Initializing MPU\n");
+-  Serial.write("PhoenixRPU build 20\n");
++  Serial.write("PhoenixRPU build 21\n");
+ 
+   // If the hardware has the ability to switch on the Credit/Reset button (requires Rev 4 or greater)
+   // then that can be used to choose Original or New code. Otherwise, the hardware switch
+@@ -2166,7 +2166,7 @@
+ 
+ 
+ // Sketch version: shown on the credits display for the first 8 seconds after power-up so you can tell which build is loaded
+-#define SKETCH_VERSION                20
++#define SKETCH_VERSION                21
+ #define SKETCH_VERSION_SHOW_MS        8000
+ boolean SketchVersionShown = false;
+ 
+@@ -2481,6 +2481,10 @@
+     RPU_TurnOffAllLamps();
+     BallFirstSwitchHitTime = 0;
+ 
++    // The bonus countdown at the end of every ball switches the solenoid stack off. Without this line it stayed
++    // off from ball 2 on, so pushes made without the override flag (the drop-bank resets) were silently dropped.
++    RPU_EnableSolenoidStack();
++
+     // Turn the flippers on for this ball (attract mode, tilt and game over turn them off).
+     // Without this call the flipper-enable line stays off for the whole game.
+     RPU_SetDisableFlippers(false);
+
+==============================================================================
+LATEST (v21) vs INITIAL (v0)
+==============================================================================
+--- d/v0-uploaded.ino	2026-10-29 01:55:28.658133604 +0000
++++ d/v21-solenoid-stack.ino	2026-10-29 02:27:12.437330837 +0000
+@@ -1,4 +1,12 @@
+ /**************************************************************************
++    PhoenixRPU - custom rules for Williams Phoenix (1978)
++    VERSION: v21 (SKETCH_VERSION 21, shown on the credits display at power-up)
++    NEW IN THIS VERSION (vs v20): from ball 2 on, the drop target banks (and anything else fired without the
++    "override" flag) were never reset mid-ball: the bonus countdown at the end of each ball switches the solenoid
++    stack off, and only the start of a GAME switched it back on. Each new ball now switches it on again.
++    (Still from v20: the first-hit rule is ball 1 only, spinner counts. From v19: inlanes light "2" and "4".)
++    Change history: see the PhoenixRPU-CHANGELOG text file delivered with each version.
++
+     This pinball code is distributed in the hope that it
+     will be useful, but WITHOUT ANY WARRANTY; without even the implied
+     warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+@@ -183,7 +191,7 @@
+ *********************************************************************/
+ byte Credits = 0;
+ byte BallSaveNumSeconds = 0;
+-byte MaximumCredits = 40;
++byte MaximumCredits = 8;           // credits stop at 8
+ byte BallsPerGame = 3;
+ byte ScoreAwardReplay = 0;
+ byte MusicVolume = 6;
+@@ -287,6 +295,7 @@
+ #define SHOOT_AGAIN_BLINK_SLOT_MS     1000
+ #define SHOOT_AGAIN_PAUSE_MS          3000
+ byte ExtraBallsBanked[RPU_NUMBER_OF_PLAYERS_ALLOWED];
++byte ExtraBallsAwarded[RPU_NUMBER_OF_PLAYERS_ALLOWED];   // extra balls earned so far this game (limit MAX_EXTRA_BALLS per player per game)
+ unsigned long ShootAgainCycleStart = 0;
+ 
+ // P-H-O-E-N-I-X progress (handbook p.5 and p.10). All of this is kept per player from ball to ball.
+@@ -297,17 +306,22 @@
+ //   Letter X: the bullseye awards the special (an extra ball) and turns X off; completing 1-5 turns it back on.
+ #define PHOENIX_LETTER_E              4       // PhoenixLetters count when E has just been lit (P,H,O,E)
+ #define PHOENIX_LETTER_I              6       // count when I has just been lit (P,H,O,E,N,I)
+-#define PHOENIX_PLAY_CONSERVATIVE     false   // true = P and H spotted separately (function 07 = 03)
++#define PHOENIX_PLAY_CONSERVATIVE     true    // (no longer used) P and H are always spotted separately, one letter per 1-5
+ #define OUTLANE_SPECIAL_ALTERNATE_MS  1000    // how often the lit outside rollover swaps sides
+ // Scores wrap at 999,999 (6-digit display). MillionsCount[] remembers how many times each
+-// player has wrapped; their score display blinks off once per million (see ShowMillionsBlink).
++// player has wrapped. Once a player is over a million their display scrolls the whole score
++// (for example 1,234,560) from right to left, rests on the normal 6 digits for 10 seconds and scrolls again.
+ #define SCORE_WRAP_VALUE              1000000
+-#define MILLIONS_BLINK_PERIOD_MS      600     // one blink every 600 ms
+-#define MILLIONS_BLINK_OFF_MS         250     // display dark for 250 ms of each blink
+-#define MILLIONS_PAUSE_MS             4000    // steady display between blink groups
++#define MILLIONS_SCROLL_STEP_MS       180     // time each digit takes to step across the display
++#define MILLIONS_PAUSE_MS             10000   // normal 6-digit score shown between scrolls
+ byte MillionsCount[RPU_NUMBER_OF_PLAYERS_ALLOWED];
+-boolean MillionsBlinkDark[RPU_NUMBER_OF_PLAYERS_ALLOWED];
++boolean MillionsBlinkDark[RPU_NUMBER_OF_PLAYERS_ALLOWED];          // true while that display is mid-scroll
++unsigned long MillionsScrollStart[RPU_NUMBER_OF_PLAYERS_ALLOWED];  // when the current 10-second cycle began
+ byte PhoenixLetters[RPU_NUMBER_OF_PLAYERS_ALLOWED];           // letters P,H,O,E,N,I spotted so far (0-6)
++byte PhoenixCompletions[RPU_NUMBER_OF_PLAYERS_ALLOWED];       // times P-H-O-E-N-I-X has been completed and started over
++unsigned long PhoenixCompleteTime[RPU_NUMBER_OF_PLAYERS_ALLOWED]; // when it was last completed (starts the blink clock)
++#define PHOENIX_BLINK_INTERVAL_MS     30000   // completed PHOENIX blinks every 30 seconds
++#define PHOENIX_BLINK_PERIOD_MS       500     // one blink = all lamps on 250 ms, then off 250 ms
+ byte PhoenixSets[RPU_NUMBER_OF_PLAYERS_ALLOWED];              // how many times 1-5 has been completed
+ byte RolloversLit[RPU_NUMBER_OF_PLAYERS_ALLOWED];             // bits 0-4 = "1" through "5"
+ boolean PhoenixXLit[RPU_NUMBER_OF_PLAYERS_ALLOWED];           // bullseye special is armed
+@@ -330,10 +344,13 @@
+ #define SCORE_OUTSIDE_ROLLOVER        1000    // 1000 and advance bonus (playfield)
+ #define SCORE_CENTER_DROP             10000   // A and B centre drop targets: 10,000 and advance bonus (playfield)
+ #define SCORE_SIDE_TARGET             100     // targets 14 and 19 (light "3"): nothing printed, recommended value
+-#define SCORE_DROP_TARGET             100     // single bank drop target: nothing printed, recommended value
+-#define SCORE_DROP_BANK_COMPLETE      1000    // 4 down also advances the multiplier and the bonus; recommended value
++#define SCORE_DROP_TARGET             1000    // single bank drop target: 1,000 (measured on the stock game)
++#define SCORE_DROP_BANK_COMPLETE      9000    // extra for the 4th target, so completing a bank scores 10,000 in all (measured on the stock game); also advances the multiplier and the bonus
+ // Bullseye: 5000 and advance bonus, or the highest lit letter value if that is higher
+ // P 10,000  H 10,000  O 20,000  E 20,000  N 30,000  I 30,000  X 40,000 (playfield)
++// Collecting the lit extra ball with the bullseye also scores this much on top of the letter value
++// (stock game: bullseye with P-H-O-E lit and extra ball lit scored 60,000 = 20,000 letter + 40,000)
++#define SCORE_BULLSEYE_EXTRA_BALL     40000
+ const unsigned long PhoenixLetterValues[7] = {10000, 10000, 20000, 20000, 30000, 30000, 40000};
+ byte GameRulesSelection;
+ // CUSTOMIZATION TODO:
+@@ -358,7 +375,19 @@
+ unsigned long LastSpinnerHitTime;
+ unsigned long LastTimeSaucerSeen;
+ 
+-#define DROP_TARGET_RESET_STRENGTH    10
++#define DROP_TARGET_RESET_STRENGTH    50   // ms; was 10, then 30 - still too weak to latch the targets up. Raise again if they don't lock
++// On the System Alpha (rev 200) the "strength" numbers above are ignored: the board's own firmware times every coil pulse.
++// The real pulse length is sent to the board once at power-up with RPU_SetSolenoidDefaultPulse() (see setup()).
++#define DROP_TARGET_RESET_PULSE_MS    60   // ms for each of the six drop-target reset coils; raise it (try 80, 100) if targets don't latch up
++#define DROP_BANK_RESET_STAGGER_MS    300  // the right bank resets this long after the left, so the big coils don't all fire together
++#define DROP_BANK_COMPLETE_RESET_DELAY_MS 100  // 4th target down -> reset coil fires this many ms later (was 500 in v17)
++// Backstop: if every target in a bank is physically down (switches closed) for this long and no reset was asked for recently, reset it
++#define DROP_BANK_BACKSTOP_STABLE_MS  250
++#define DROP_BANK_BACKSTOP_RETRY_MS   2500  // wait this long after any reset request before trying again
++#define DROP_BANK_BACKSTOP_MAX_TRIES  3     // per bank per ball: stops a stuck switch from firing the coils forever
++unsigned long BankAllDownSince[2];          // 0 = left bank, 1 = right bank
++unsigned long BankLastResetRequest[2];
++byte BankBackstopTries[2];
+ #define KNOCKER_SOLENOID_STRENGTH     5
+ 
+ // CUSTOMIZATION TODO:
+@@ -381,7 +410,7 @@
+   // these are the values that will be used
+   HighScore = 350000;                // factory high score to date
+   Credits = 4;
+-  FreePlayMode = false;
++  FreePlayMode = true;
+   BallSaveNumSeconds = 0;            // Phoenix has no ball save
+   MusicVolume = 10;
+   SoundEffectsVolume = 10;
+@@ -499,7 +528,8 @@
+     Credits = RPU_ReadByteFromEEProm(RPU_CREDITS_EEPROM_BYTE);
+     if (Credits > MaximumCredits) Credits = MaximumCredits;
+   
+-    FreePlayMode = ReadSetting(EEPROM_FREE_PLAY_BYTE, false, true);
++    // This machine is always on free play: Start never needs a credit
++    FreePlayMode = true;
+     MusicVolume = ReadSetting(EEPROM_MUSIC_VOLUME_BYTE, 10, 10);
+     SoundEffectsVolume = ReadSetting(EEPROM_SFX_VOLUME_BYTE, 10, 10);
+     CalloutsVolume = ReadSetting(EEPROM_CALLOUTS_VOLUME_BYTE, 10, 10);
+@@ -515,7 +545,7 @@
+     ScoreAwardReplay = ReadSetting(EEPROM_AWARD_OVERRIDE_BYTE, 0x03, 0x07);
+     BallsPerGame = ReadSetting(EEPROM_BALLS_OVERRIDE_BYTE, 3, 10);
+     ScrollingScores = ReadSetting(EEPROM_SCROLLING_SCORES_BYTE, true, true);
+-    ScrollingScores = false;   // Phoenix: scores wrap at 999,999 and MillionsCount blinks the display
++    ScrollingScores = false;   // Phoenix: scores wrap at 999,999; MillionsCount scores scroll their full total every 10 seconds
+     MatchFeature = ReadSetting(EEPROM_MATCH_FEATURE_BYTE, true, true);
+ 
+     CPCSelection[0] = ReadSetting(RPU_CPC_CHUTE_1_SELECTION_BYTE, 4, 8);
+@@ -673,6 +703,7 @@
+   // Set up the chips and interrupts
+   unsigned long initResult = 0;
+   if (DEBUG_MESSAGES) Serial.write("Initializing MPU\n");
++  Serial.write("PhoenixRPU build 21\n");
+ 
+   // If the hardware has the ability to switch on the Credit/Reset button (requires Rev 4 or greater)
+   // then that can be used to choose Original or New code. Otherwise, the hardware switch
+@@ -680,6 +711,14 @@
+   initResult = RPU_InitializeMPU(   RPU_CMD_BOOT_ORIGINAL_IF_CREDIT_RESET | RPU_CMD_BOOT_ORIGINAL_IF_NOT_SWITCH_CLOSED |
+                                     RPU_CMD_INIT_AND_RETURN_EVEN_IF_ORIGINAL_CHOSEN | RPU_CMD_PERFORM_MPU_TEST, SW_CREDIT_RESET);
+ 
++  // Tell the System Alpha how long to pulse the drop-target reset coils (it ignores the strength numbers)
++  RPU_SetSolenoidDefaultPulse(SOL_DROP_L_TOP_RESET, DROP_TARGET_RESET_PULSE_MS);
++  RPU_SetSolenoidDefaultPulse(SOL_DROP_L_BOTTOM_RESET, DROP_TARGET_RESET_PULSE_MS);
++  RPU_SetSolenoidDefaultPulse(SOL_DROP_R_TOP_RESET, DROP_TARGET_RESET_PULSE_MS);
++  RPU_SetSolenoidDefaultPulse(SOL_DROP_R_BOTTOM_RESET, DROP_TARGET_RESET_PULSE_MS);
++  RPU_SetSolenoidDefaultPulse(SOL_DROP_CENTER_LEFT_RESET, DROP_TARGET_RESET_PULSE_MS);
++  RPU_SetSolenoidDefaultPulse(SOL_DROP_CENTER_RIGHT_RESET, DROP_TARGET_RESET_PULSE_MS);
++
+   if (DEBUG_MESSAGES) {
+     char buf[128];
+     sprintf(buf, "Return from init = 0x%04lX\n", initResult);
+@@ -977,10 +1016,10 @@
+       //PlaySoundEffect(SOUND_EFFECT_ADD_CREDIT);
+       RPU_PushToSolenoidStack(SOL_KNOCKER, KNOCKER_SOLENOID_STRENGTH, true);
+     }
+-    RPU_SetDisplayCredits(Credits, !FreePlayMode);
++    RPU_SetDisplayCredits(Credits, true);
+     RPU_SetCoinLockout(false);
+   } else {
+-    RPU_SetDisplayCredits(Credits, !FreePlayMode);
++    RPU_SetDisplayCredits(Credits, true);
+     RPU_SetCoinLockout(true);
+   }
+ 
+@@ -1047,7 +1086,7 @@
+ // The "Extra Ball When Lit" lamp is lit while an extra ball is waiting at the bullseye
+ // and there is room in the bank to take it.
+ boolean ExtraBallIsLit() {
+-  return ExtraBallAvailable[CurrentPlayer]==1 && ExtraBallsBanked[CurrentPlayer] < MAX_EXTRA_BALLS;
++  return ExtraBallAvailable[CurrentPlayer]==1 && ExtraBallsAwarded[CurrentPlayer] < MAX_EXTRA_BALLS;
+ }
+ 
+ // Lit side of the alternating outside rollovers: left on even periods, right on odd ones.
+@@ -1064,12 +1103,21 @@
+   byte player = CurrentPlayer;
+   for (byte count = 0; count < 6; count++) RPU_SetLampState(PhoenixLetterLamps[count], count < PhoenixLetters[player]);
+   RPU_SetLampState(LAMP_X, PhoenixXLit[player]);
++  // Completed PHOENIX at least once: blink all seven lamps once per completion every 30 s, then show progress again
++  if (PhoenixCompletions[player]) {
++    unsigned long phase = (CurrentTime - PhoenixCompleteTime[player]) % PHOENIX_BLINK_INTERVAL_MS;
++    if (phase < (unsigned long)PhoenixCompletions[player] * PHOENIX_BLINK_PERIOD_MS) {
++      boolean blinkOn = (phase % PHOENIX_BLINK_PERIOD_MS) < (PHOENIX_BLINK_PERIOD_MS / 2);
++      for (byte count = 0; count < 6; count++) RPU_SetLampState(PhoenixLetterLamps[count], blinkOn);
++      RPU_SetLampState(LAMP_X, blinkOn);
++    }
++  }
+   for (byte count = 0; count < 5; count++) RPU_SetLampState(RolloverLamps[count], (RolloversLit[player] >> count) & 0x01);
+ 
+   RPU_SetLampState(LAMP_EXTRA_BALL_WHEN_LIT, ExtraBallIsLit());
+   RPU_SetLampState(LAMP_SPINNER_1000_WL, SpinnerIsLit());
+ 
+-  if (OutlaneSpecialReady[player] && ExtraBallsBanked[player] < MAX_EXTRA_BALLS) {
++  if (OutlaneSpecialReady[player] && ExtraBallsAwarded[player] < MAX_EXTRA_BALLS) {
+     boolean leftLit = LeftOutlaneSpecialIsLit();
+     RPU_SetLampState(LAMP_LEFT_SPECIAL, leftLit);
+     RPU_SetLampState(LAMP_RIGHT_SPECIAL, !leftLit);
+@@ -1092,30 +1140,52 @@
+     return true;
+   }
+ 
+-  if (ExtraBallsBanked[CurrentPlayer] >= MAX_EXTRA_BALLS) return false;
++  if (ExtraBallsAwarded[CurrentPlayer] >= MAX_EXTRA_BALLS) return false;   // 5 extra balls per player per game, in total
+ 
+   if (!basedOnScore) ExtraBallAvailable[CurrentPlayer] = 0;    // collecting the lit ball turns the lamp off
+   ExtraBallsBanked[CurrentPlayer] += 1;
++  ExtraBallsAwarded[CurrentPlayer] += 1;
+   ShootAgainCycleStart = CurrentTime;       // restart the blink pattern so the new count shows right away
+   QueueNotification(SOUND_EFFECT_VP_EXTRA_BALL, 8);
+   return true;
+ }
+ 
+-// Blinks each player's score display N times (N = millions) then holds steady.
+-// Call after Display_UpdateDisplays each pass. Scores themselves are never changed here.
+-void ShowMillionsBlink() {
++// Scrolls the whole score (millions + 6 digits) across the display of every player over a million, then rests on the
++// normal score for MILLIONS_PAUSE_MS and repeats. Call after Display_UpdateDisplays each pass; only the display is
++// changed, never the score. numPlayers = how many displays to look at.
++void ShowMillionsScroll(byte numPlayers) {
+   for (byte player = 0; player < RPU_NUMBER_OF_PLAYERS_ALLOWED; player++) {
+-    boolean dark = false;
+-    if (player < CurrentNumPlayers && MillionsCount[player] > 0) {
+-      unsigned long sequenceMs = (unsigned long)MillionsCount[player] * MILLIONS_BLINK_PERIOD_MS;
+-      unsigned long phase = CurrentTime % (sequenceMs + MILLIONS_PAUSE_MS);
+-      dark = (phase < sequenceMs) && ((phase % MILLIONS_BLINK_PERIOD_MS) < MILLIONS_BLINK_OFF_MS);
++    boolean scrolling = false;
++    if (player < numPlayers && MillionsCount[player] > 0) {
++      // digits of the total score: the millions, then the six digits of the wrapped score
++      char digits[12];
++      byte numDigits = 0;
++      unsigned long millions = MillionsCount[player];
++      char millionsText[4];
++      byte millionsLen = 0;
++      while (millions) { millionsText[millionsLen++] = '0' + (millions % 10); millions /= 10; }
++      while (millionsLen) digits[numDigits++] = millionsText[--millionsLen];
++      unsigned long score = CurrentScores[player];
++      for (byte place = 0; place < 6; place++) digits[numDigits + 5 - place] = '0' + ((score / (place == 0 ? 1UL : (place == 1 ? 10UL : (place == 2 ? 100UL : (place == 3 ? 1000UL : (place == 4 ? 10000UL : 100000UL)))))) % 10);
++      numDigits += 6;
++
++      // Frames 0 .. numDigits-2 scroll the digits in from the right; the last frame is the normal score
++      unsigned long scrollMs = (unsigned long)(numDigits - 1) * MILLIONS_SCROLL_STEP_MS;
++      unsigned long phase = (CurrentTime - MillionsScrollStart[player]) % (scrollMs + MILLIONS_PAUSE_MS);
++      if (phase < scrollMs) {
++        byte frame = phase / MILLIONS_SCROLL_STEP_MS;               // 0 .. numDigits-2
++        byte shown = (frame + 1 > 6) ? 6 : (frame + 1);             // digits visible in this frame
++        unsigned long value = 0;
++        for (byte count = 0; count < shown; count++) value = value * 10 + (digits[frame - (shown - 1) + count] - '0');
++        RPU_SetDisplay(player, value, false, 1);                    // write the digits...
++        RPU_SetDisplayBlank(player, (byte)(((1 << shown) - 1) << (6 - shown)));   // ...and light only the right-hand ones
++        scrolling = true;
++      }
+     }
+-    if (dark) {
+-      RPU_SetDisplayBlank(player, 0x00);
++    if (scrolling) {
+       MillionsBlinkDark[player] = true;
+     } else if (MillionsBlinkDark[player]) {
+-      RPU_SetDisplay(player, CurrentScores[player], true, 2, true);   // restore the score
++      RPU_SetDisplay(player, CurrentScores[player], true, 2, true);   // back to the normal score
+       MillionsBlinkDark[player] = false;
+     }
+   }
+@@ -1124,11 +1194,21 @@
+ // Called when all five "1"-"5" rollover lamps are lit. Spots the next letter(s).
+ void SpotLetters() {
+   byte player = CurrentPlayer;
+-  boolean firstSet = (PhoenixSets[player] == 0);
++  // Every letter and X already lit and 1-5 completed again: PHOENIX is complete. Turn every letter off and start over.
++  if (PhoenixLetters[player] >= 6 && PhoenixXLit[player]) {
++    if (PhoenixCompletions[player] < 250) PhoenixCompletions[player] += 1;
++    PhoenixCompleteTime[player] = CurrentTime;       // starts the first blink right away
++    PhoenixLetters[player] = 0;
++    PhoenixXLit[player] = false;
++    OutlaneSpecialReady[player] = false;
++    if (DEBUG_MESSAGES) Serial.write("PHOENIX complete: all letters off, start over\n");
++    return;
++  }
++
+   if (PhoenixSets[player] < 250) PhoenixSets[player] += 1;
+ 
+   if (PhoenixLetters[player] < 6) {
+-    byte toSpot = (firstSet && !PHOENIX_PLAY_CONSERVATIVE) ? 2 : 1;   // normal play: P and H together
++    byte toSpot = 1;   // every completion of 1-5 spots exactly one letter: P, H, O, E, N, I, then X
+     for (byte count = 0; count < toSpot && PhoenixLetters[player] < 6; count++) {
+       PhoenixLetters[player] += 1;
+       if (PhoenixLetters[player] == PHOENIX_LETTER_E) ExtraBallAvailable[player] = 1;     // E lights Extra Ball When Lit
+@@ -1140,8 +1220,12 @@
+     OutlaneSpecialReady[player] = true;
+   }
+ 
+-  // Once E has been reached, every completion of 1-5 lights Extra Ball When Lit again
+-  if (PhoenixLetters[player] >= PHOENIX_LETTER_E) ExtraBallAvailable[player] = 1;
++  // Extra Ball When Lit is lit only when E is spotted (above), not on every later completion of 1-5
++  if (DEBUG_MESSAGES) {
++    char buf[40];
++    sprintf(buf, "Letters lit: %d, X %d\n", PhoenixLetters[player], PhoenixXLit[player] ? 1 : 0);
++    Serial.write(buf);
++  }
+ }
+ 
+ void ResetCenterDropTarget(boolean left) {
+@@ -1154,8 +1238,14 @@
+   byte player = CurrentPlayer;
+   RolloversLit[player] |= (1 << index);
+   if (index == 0 || index == 4) RolloversLit[player] |= 0x11;
++  if (DEBUG_MESSAGES) {
++    char buf[40];
++    sprintf(buf, "Number %d lit, lamps now %02X\n", index + 1, RolloversLit[player] & 0x1F);
++    Serial.write(buf);
++  }
+   if ((RolloversLit[player] & 0x1F) == 0x1F) {
+     RolloversLit[player] = 0;
++    if (DEBUG_MESSAGES) Serial.write("1-5 complete: number lamps cleared\n");
+     SpotLetters();
+   }
+ }
+@@ -1181,8 +1271,8 @@
+   CurrentScores[player] += bullseyeScore * PlayfieldMultiplier;
+   AddToBonus(1);
+   if (ExtraBallIsLit()) {
+-    AwardExtraBall(false);                                  // collects the lit extra ball
+-  } else if (PhoenixXLit[player] && ExtraBallsBanked[player] < MAX_EXTRA_BALLS) {
++    if (AwardExtraBall(false)) CurrentScores[player] += SCORE_BULLSEYE_EXTRA_BALL;   // collects the lit extra ball
++  } else if (PhoenixXLit[player] && ExtraBallsAwarded[player] < MAX_EXTRA_BALLS) {
+     if (AwardExtraBall(true)) PhoenixXLit[player] = false;  // special (an extra ball); X goes off
+   }
+ }
+@@ -1191,7 +1281,8 @@
+ void HandleOutlaneSpecial(boolean leftOutlane) {
+   if (!OutlaneSpecialReady[CurrentPlayer]) return;
+   if (leftOutlane != LeftOutlaneSpecialIsLit()) return;
+-  AwardExtraBall(true);   // special re-arms after collection: stays ready (spotting I keeps it on)
++  // The special turns off once collected; the next completion of 1-5 lights it again
++  if (AwardExtraBall(true)) OutlaneSpecialReady[CurrentPlayer] = false;
+ }
+ 
+ 
+@@ -1928,7 +2019,7 @@
+ //    Runs on the playfield lamps (the LEDs) while the machine is waiting in
+ //    game over. Timing, measured from when attract starts or from the last
+ //    switch activity while in attract:
+-//      - dark for 1 minute (ATTRACT_SHOW_FIRST_DELAY_MS)
++//      - dark for 30 seconds (ATTRACT_SHOW_FIRST_DELAY_MS)
+ //      - show runs for 1 minute (ATTRACT_SHOW_RUN_MS)
+ //      - dark for 3 minutes (ATTRACT_SHOW_DARK_MS), then the show runs again, and so on
+ //      - 30 minutes after the idle clock started the playfield stays dark
+@@ -1941,7 +2032,7 @@
+ //    Not included: lamp 47 (shoot again) and lamp 55 (credits), which mean something.
+ //
+ ////////////////////////////////////////////////////////////////////////////
+-#define ATTRACT_SHOW_FIRST_DELAY_MS     60000UL     // idle time before the first show
++#define ATTRACT_SHOW_FIRST_DELAY_MS     30000UL     // idle time before the first show (30 seconds)
+ #define ATTRACT_SHOW_RUN_MS             60000UL     // how long each show runs (two passes of the 30-second sequence)
+ #define ATTRACT_SHOW_DARK_MS           180000UL     // dark time between shows
+ #define ATTRACT_SHOW_TOTAL_MS         1800000UL     // after this long idle, stay dark
+@@ -2074,6 +2165,11 @@
+ }
+ 
+ 
++// Sketch version: shown on the credits display for the first 8 seconds after power-up so you can tell which build is loaded
++#define SKETCH_VERSION                21
++#define SKETCH_VERSION_SHOW_MS        8000
++boolean SketchVersionShown = false;
++
+ int RunAttractMode(int curState, boolean curStateChanged) {
+ 
+   int returnState = curState;
+@@ -2095,7 +2191,7 @@
+     Display_UpdateDisplays(0xFF);
+     AttractCheckedForTrappedBall = false;
+     AttractModeStartTime = CurrentTime;
+-    AttractShowIdleStart = CurrentTime;   // playfield stays dark for the first minute
++    AttractShowIdleStart = CurrentTime;   // playfield stays dark for the first 30 seconds
+ 
+ #ifdef RPU_OS_USE_ACCESSORY_LAMP_BOARD
+     TopperALB.StopAnimation();
+@@ -2104,6 +2200,15 @@
+ #endif
+   }
+ 
++  if (!SketchVersionShown) {
++    if (CurrentTime < SKETCH_VERSION_SHOW_MS) {
++      RPU_SetDisplayCredits(SKETCH_VERSION, true);
++    } else {
++      RPU_SetDisplayCredits(Credits, !FreePlayMode);
++      SketchVersionShown = true;
++    }
++  }
++
+   if (CurrentTime > (AttractModeStartTime + 5000) && !AttractCheckedForTrappedBall) {
+     AttractCheckedForTrappedBall = true;
+     if (DEBUG_MESSAGES) {
+@@ -2131,7 +2236,7 @@
+       Display_ClearOverride(0xFF);
+     }
+     AttractLastHeadMode = 1;
+-    Display_UpdateDisplays(0xFF);
++    Display_UpdateDisplays(0);          // between games only display 1 is used
+     RPU_SetLampState(LAMP_HEAD_HIGH_SCORE, 0);
+   } else if ((CurrentTime / 8000) % 2 == 0) {
+ 
+@@ -2139,7 +2244,7 @@
+       Display_SetLastTimeScoreChanged(CurrentTime);
+     }
+     AttractLastHeadMode = 2;
+-    Display_UpdateDisplays(0xFF, false, false, false, HighScore);
++    Display_UpdateDisplays(0, false, false, false, HighScore);   // high score on display 1 only
+     RPU_SetLampState(LAMP_HEAD_HIGH_SCORE, 1);
+     for (byte count=0; count<4; count++) {
+       RPU_SetLampState(PlayerUpLamps[count], 0);
+@@ -2156,15 +2261,20 @@
+     }
+ 
+     RPU_SetLampState(LAMP_HEAD_HIGH_SCORE, 0);
+-    for (byte count=0; count<4; count++) {
+-      if (count<CurrentNumPlayers) Display_UpdateDisplays(count, false, false, false, CurrentScores[count]);
+-      else if (CurrentNumPlayers==0) Display_UpdateDisplays(count, false, false, false, 0);
+-    }
++    // Last game's score for player 1 on display 1 (zero when there has been no game)
++    Display_UpdateDisplays(0, false, false, false, (CurrentNumPlayers > 0) ? CurrentScores[0] : 0);
+ 
+     AttractLastHeadMode = 3;
+   }
+ 
+-  // Playfield light show (1 minute idle, show, 3 minutes dark, repeat, dark after 30 minutes)
++  // A last game over a million scrolls its total on display 1 (the same 10-second cycle as in play)
++  if (AttractLastHeadMode == 3) ShowMillionsScroll(CurrentNumPlayers > 0 ? 1 : 0);
++  else if (MillionsBlinkDark[0]) ShowMillionsScroll(0);
++
++  // Between games displays 2-4 stay blank. They light up again as players are added once a game is started.
++  for (byte count = 1; count < 4; count++) RPU_SetDisplayBlank(count, 0x00);
++
++  // Playfield light show (30 seconds idle, show, 3 minutes dark, repeat, dark after 30 minutes)
+   ManageAttractLightShow();
+ 
+   byte switchHit;
+@@ -2318,10 +2428,14 @@
+     CurrentScores[count] = 0;
+     ExtraBallAvailable[count] = 0;
+     ExtraBallsBanked[count] = 0;
++    ExtraBallsAwarded[count] = 0;
+     MillionsCount[count] = 0;
+     MillionsBlinkDark[count] = false;
++    MillionsScrollStart[count] = 0;
+     PhoenixLetters[count] = 0;
+     PhoenixSets[count] = 0;
++    PhoenixCompletions[count] = 0;
++    PhoenixCompleteTime[count] = 0;
+     RolloversLit[count] = 0;
+     PhoenixXLit[count] = false;
+     OutlaneSpecialReady[count] = false;
+@@ -2367,6 +2481,14 @@
+     RPU_TurnOffAllLamps();
+     BallFirstSwitchHitTime = 0;
+ 
++    // The bonus countdown at the end of every ball switches the solenoid stack off. Without this line it stayed
++    // off from ball 2 on, so pushes made without the override flag (the drop-bank resets) were silently dropped.
++    RPU_EnableSolenoidStack();
++
++    // Turn the flippers on for this ball (attract mode, tilt and game over turn them off).
++    // Without this call the flipper-enable line stays off for the whole game.
++    RPU_SetDisableFlippers(false);
++
+     RPU_SetDisplayCredits(Credits, !FreePlayMode);
+     if (CurrentNumPlayers > 1 && (CurrentBallInPlay != 1 || CurrentPlayer != 0) && !SamePlayerShootsAgain) AlertPlayerUp();
+     SamePlayerShootsAgain = false;
+@@ -2418,7 +2540,12 @@
+ 
+     // Reset Drop Targets
+     LeftDropTargets.ResetDropTargets(CurrentTime + 100, true, true);
+-    RightDropTargets.ResetDropTargets(CurrentTime + 100, true, true);
++    RightDropTargets.ResetDropTargets(CurrentTime + 100 + DROP_BANK_RESET_STAGGER_MS, true, true);
++    for (byte bankIndex = 0; bankIndex < 2; bankIndex++) {
++      BankAllDownSince[bankIndex] = 0;
++      BankLastResetRequest[bankIndex] = CurrentTime;   // the backstop leaves the banks alone while these resets happen
++      BankBackstopTries[bankIndex] = 0;
++    }
+     // The centre single drop targets are not reset at the start of a ball (handbook p.5);
+     // they are reset by the "2" and "4" rollovers and the inside rollovers.
+ 
+@@ -2461,6 +2588,33 @@
+   RightDropTargets.Update(CurrentTime);
+ }
+ 
++// Asks a bank (0 = left, 1 = right) to stand back up after delayMs, and remembers when we asked.
++void RequestDropBankReset(byte bankIndex, unsigned long delayMs) {
++  DropTargetBank &bank = bankIndex ? RightDropTargets : LeftDropTargets;
++  BankLastResetRequest[bankIndex] = CurrentTime;
++  bank.ResetDropTargets(CurrentTime + delayMs, true);
++}
++
++// Backstop for the banks: trusts the switches, not the hit count. If all four targets in a bank are physically
++// down and stay down, stand the bank up (no points: whatever was missed was never scored).
++void CheckDropBankBackstop() {
++  if (NumTiltWarnings > MaxTiltWarnings) return;   // coils are off during a tilt
++  for (byte bankIndex = 0; bankIndex < 2; bankIndex++) {
++    DropTargetBank &bank = bankIndex ? RightDropTargets : LeftDropTargets;
++    if (bank.GetStatus(true) != 0x0F) {
++      BankAllDownSince[bankIndex] = 0;
++      continue;
++    }
++    if (BankAllDownSince[bankIndex] == 0) BankAllDownSince[bankIndex] = CurrentTime;
++    if ((CurrentTime - BankAllDownSince[bankIndex]) < DROP_BANK_BACKSTOP_STABLE_MS) continue;
++    if (BankLastResetRequest[bankIndex] && (CurrentTime - BankLastResetRequest[bankIndex]) < DROP_BANK_BACKSTOP_RETRY_MS) continue;
++    if (BankBackstopTries[bankIndex] >= DROP_BANK_BACKSTOP_MAX_TRIES) continue;
++    BankBackstopTries[bankIndex] += 1;
++    if (DEBUG_MESSAGES) Serial.write(bankIndex ? "Right bank all down: backstop reset\n" : "Left bank all down: backstop reset\n");
++    RequestDropBankReset(bankIndex, 50);
++  }
++}
++
+ 
+ 
+ byte GameModeStage;
+@@ -2482,6 +2636,7 @@
+   boolean statusRunning = false;
+ 
+   UpdateDropTargets();
++  CheckDropBankBackstop();
+ 
+   if ((CurrentTime - LastSwitchHitTime) > 3000) TimersPaused = true;
+   else TimersPaused = false;
+@@ -2569,11 +2724,11 @@
+   }
+   ShowPlayerLamps();
+ 
+-  ShowMillionsBlink();
+   if (Display_UpdateDisplays(0xFF, false, (BallFirstSwitchHitTime == 0) ? true : false, (BallFirstSwitchHitTime > 0 && ((CurrentTime - Display_GetLastTimeScoreChanged()) > 2000)) ? true : false)) {
+     Audio.StopSound(SOUND_EFFECT_SCORE_TICK);
+     PlaySoundEffect(SOUND_EFFECT_SCORE_TICK);
+   }
++  ShowMillionsScroll(CurrentNumPlayers);   // players over a million scroll their whole score every 10 seconds
+ 
+   // Check to see if ball is in the outhole
+   if (CountBallsInTrough() > (TotalBallsLoaded - (NumberOfBallsInPlay + NumberOfBallsLocked))) {
+@@ -2706,6 +2861,7 @@
+         LastBonusSoundPlayed = soundToPlay;
+         BonusSoundIncrement += 1;
+         CurrentScores[CurrentPlayer] += 1000;
++        PlayScoreSounds(1000);   // original 1,000 sound for each bonus step
+       }
+ 
+       DecrementingBonusCounter -= 1;
+@@ -3080,13 +3236,22 @@
+ 
+ 
+ 
++// A drop target went down before the ball reached a 1-5 rollover: count it so the bank still knows how many are
++// down, but score nothing and leave the ball unplayed. If it was the 4th, stand the bank back up.
++void CountDropBankHitQuietly(DropTargetBank &bank, byte switchHit) {
++  byte bankIndex = (&bank == &RightDropTargets) ? 1 : 0;
++  bank.HandleDropTargetHit(switchHit);
++  if (bank.CheckIfBankCleared()) RequestDropBankReset(bankIndex, DROP_BANK_COMPLETE_RESET_DELAY_MS);
++}
++
+ void HandleDropBankHit(DropTargetBank &bank, byte switchHit) {
++  byte bankIndex = (&bank == &RightDropTargets) ? 1 : 0;
+   bank.HandleDropTargetHit(switchHit);
+   CurrentScores[CurrentPlayer] += SCORE_DROP_TARGET * PlayfieldMultiplier;
+ 
+   if (bank.CheckIfBankCleared()) {
+     // All four down: advance the 2X-5X multiplier and the bonus, then reset the bank
+-    bank.ResetDropTargets(CurrentTime + 500, true);
++    RequestDropBankReset(bankIndex, DROP_BANK_COMPLETE_RESET_DELAY_MS);
+     CurrentScores[CurrentPlayer] += SCORE_DROP_BANK_COMPLETE * PlayfieldMultiplier;
+     IncreaseBonusX();
+     AddToBonus(1);
+@@ -3124,6 +3289,19 @@
+ // This is where switch handling happens
+ void HandleGamePlaySwitches(byte switchHit) {
+ 
++  // Ball 1 only: nothing scores until the ball has been plunged and reaches one of the "1"-"5" rollovers at the
++  // top or the spinner (a ball can miss the rollovers and go down the ramp to the spinner). Until then the ball
++  // does not count as played (a ball that comes back to the trough is served again), so switch noise while the
++  // ball is fed or the drop targets reset cannot score or start the ball. From ball 2 on there is no such wait.
++  if (CurrentBallInPlay == 1 && BallFirstSwitchHitTime == 0 &&
++      !(switchHit >= SW_ROLLOVER_1 && switchHit <= SW_ROLLOVER_5) && switchHit != SW_SPINNER) {
++    // Drop targets that go down this early (the right bank is next to the shooter lane) still have to be counted,
++    // otherwise the bank never sees its 4th target and stays down. No points, no bonus, ball still unplayed.
++    if (switchHit >= SW_DROP_L_1 && switchHit <= SW_DROP_L_4) CountDropBankHitQuietly(LeftDropTargets, switchHit);
++    else if (switchHit >= SW_DROP_R_1 && switchHit <= SW_DROP_R_4) CountDropBankHitQuietly(RightDropTargets, switchHit);
++    return;
++  }
++
+   switch (switchHit) {
+ 
+     // Jet bumpers: left and right 10, centre 100
+@@ -3197,6 +3375,7 @@
+       ResetCenterDropTarget(true);
+       CurrentScores[CurrentPlayer] += SCORE_INSIDE_ROLLOVER * PlayfieldMultiplier;
+       AddToBonus(1);
++      LightNumber(1);                                       // same as the top "2" rollover
+       ValidateAndRegisterPlayfieldSwitch();
+       break;
+ 
+@@ -3204,6 +3383,7 @@
+       ResetCenterDropTarget(false);
+       CurrentScores[CurrentPlayer] += SCORE_INSIDE_ROLLOVER * PlayfieldMultiplier;
+       AddToBonus(1);
++      LightNumber(3);                                       // same as the top "4" rollover
+       ValidateAndRegisterPlayfieldSwitch();
+       break;
+ 
+@@ -3255,6 +3435,54 @@
+ }
+ 
+ 
++
++////////////////////////////////////////////////////////////////////////////
++//
++//  Original Phoenix sounds
++//
++//    The Phoenix sound board is driven by four coil outputs, one for each
++//    scoring digit: 10, 100, 1,000 and 10,000 points (test-02 coils 9-12).
++//    Whenever the score goes up, the matching coil is pulsed once for each
++//    unit scored: 3,000 points = three pulses of the 1,000 sound.
++//    This works with no WAV Trigger installed.
++//
++////////////////////////////////////////////////////////////////////////////
++#define SCORE_SOUND_STRENGTH          2       // pulse strength for the sound coils
++#define SCORE_SOUND_SPACING_MS        90      // time between pulses of one sound
++#define SCORE_SOUND_MAX_PULSES        5       // most pulses of one sound for a single score change
++#define SCORE_SOUND_ENABLED           true    // set false to silence the original sounds
++
++void PlayScoreSounds(unsigned long pointsScored) {
++  if (!SCORE_SOUND_ENABLED || pointsScored == 0) return;
++
++  const byte soundCoils[4] = { SOL_SOUND_10000, SOL_SOUND_1000, SOL_SOUND_100, SOL_SOUND_10 };
++  const unsigned long unitValues[4] = { 10000, 1000, 100, 10 };
++  unsigned long remaining = pointsScored;
++  // Higher sounds first; the lower ones follow on top of each other's timing
++  for (byte place = 0; place < 4; place++) {
++    unsigned long count = remaining / unitValues[place];
++    remaining = remaining % unitValues[place];
++    if (count > SCORE_SOUND_MAX_PULSES) count = SCORE_SOUND_MAX_PULSES;
++    for (unsigned long pulse = 0; pulse < count; pulse++) {
++      RPU_PushToTimedSolenoidStack(soundCoils[place], SCORE_SOUND_STRENGTH, CurrentTime + pulse * SCORE_SOUND_SPACING_MS, true);
++    }
++  }
++}
++
++// Game over tune on the original sound board: a descending run of the four chimes, then the low one again
++#define GAME_OVER_TUNE_ENABLED        true
++#define GAME_OVER_TUNE_NOTE_MS        220     // time between notes
++
++void PlayGameOverTune() {
++  if (!GAME_OVER_TUNE_ENABLED) return;
++  const byte tune[5] = { SOL_SOUND_10000, SOL_SOUND_1000, SOL_SOUND_100, SOL_SOUND_10, SOL_SOUND_10000 };
++  for (byte note = 0; note < 5; note++) {
++    unsigned long when = CurrentTime + 200 + (unsigned long)note * GAME_OVER_TUNE_NOTE_MS;
++    if (note == 4) when += GAME_OVER_TUNE_NOTE_MS;   // short pause before the last note
++    RPU_PushToTimedSolenoidStack(tune[note], SCORE_SOUND_STRENGTH, when, true);
++  }
++}
++
+ int RunGamePlayMode(int curState, boolean curStateChanged) {
+   int returnState = curState;
+   unsigned long scoreAtTop = CurrentScores[CurrentPlayer];
+@@ -3294,8 +3522,10 @@
+       scoreAtTop = CurrentScores[CurrentPlayer];
+ 
+       if (CurrentBallInPlay > BallsPerGame) {
++        RPU_SetDisableFlippers(true);   // game over: flippers off
+         CheckHighScores();
+         PlaySoundEffect(SOUND_EFFECT_GAME_OVER);
++        PlayGameOverTune();   // original sound board: game over tune
+         for (int count = 0; count < CurrentNumPlayers; count++) {
+           RPU_SetDisplay(count, CurrentScores[count], true, 2);
+         }
+@@ -3329,8 +3559,9 @@
+ 
+   if (CreditResetPressStarted) {
+     if (CurrentBallInPlay < 2) {
+-      // If we haven't finished the first ball, we can add players
+-      AddPlayer();
++      // If we haven't finished the first ball, each press adds a player (up to 4);
++      // once all four are in, further presses add credits (up to 8)
++      if (!AddPlayer()) AddCredit(false, 1);
+       if (DEBUG_MESSAGES) {
+         Serial.write("Start game button pressed\n\r");
+       }
+@@ -3369,10 +3600,13 @@
+   while (CurrentScores[CurrentPlayer] >= SCORE_WRAP_VALUE) {
+     CurrentScores[CurrentPlayer] -= SCORE_WRAP_VALUE;
+     if (MillionsCount[CurrentPlayer] < 250) MillionsCount[CurrentPlayer] += 1;
++    MillionsScrollStart[CurrentPlayer] = CurrentTime;   // scroll the new total right away
+   }
+ 
+   if (scoreAtTop != CurrentScores[CurrentPlayer]) {
+     Display_SetLastTimeScoreChanged(CurrentTime);
++    // Original Phoenix sounds: one pulse per unit scored (only when the score went up)
++    if (CurrentScores[CurrentPlayer] > scoreAtTop) PlayScoreSounds(CurrentScores[CurrentPlayer] - scoreAtTop);
+     if (!TournamentScoring) {
+       for (int awardCount = 0; awardCount < 3; awardCount++) {
+         if (AwardScores[awardCount] != 0 && scoreAtTop < AwardScores[awardCount] && CurrentScores[CurrentPlayer] >= AwardScores[awardCount]) {
+
