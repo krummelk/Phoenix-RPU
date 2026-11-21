@@ -1,0 +1,474 @@
+PhoenixRPU change log (v41, 2026-11-18 Pacific)
+
+VERSION HISTORY
+v0  Your uploaded sketch (backbox status lamps, attract light show). Flippers never turned on.
+v1  Flipper fix: RPU_SetDisableFlippers(false) at the start of each ball; flippers off at game over.
+v2  Original Phoenix sounds: PlayScoreSounds() pulses the 10/100/1,000/10,000 sound coils (solenoids 9-12)
+    once per unit scored whenever a player's score goes up. Strength 2, 90 ms apart, max 5 pulses per sound.
+v3  Drop-target reset pulse DROP_TARGET_RESET_STRENGTH 10 -> 30 (ms).
+v4  Free play forced on at every power-up; MaximumCredits 40 -> 8; during ball 1 each Start press adds a player
+    (up to 4), further presses add a credit (up to 8); AddCredit() always shows the credit count.
+v5  Switch/sound audit against the manual's switch matrix (Figure 9). Every scoring switch already played its
+    stock sound through the score coils, except the end-of-ball bonus countdown: it added 1,000 per step with
+    no original sound. Now each bonus step pulses the 1,000 sound. New scenario 07-bonus-sounds.sim.
+v6  Drop targets were pushed up but not latching. Reset pulse DROP_TARGET_RESET_STRENGTH 30 -> 50 ms, and the
+    right bank now resets 300 ms after the left (DROP_BANK_RESET_STAGGER_MS) so the four big coils don't all fire
+    together and starve each other of current. Scenario 08 (bonus countdown timing, worst case under 30 s) added in
+    the test suite; no sketch change for it.
+v7  Root cause for the weak drop-target reset: on the System Alpha (rev 200) the RPU library forces every coil push
+    to a single pulse and ignores the "strength" number, so the 10 -> 30 -> 50 changes in v3/v6 had no effect.
+    The pulse length is set only by RPU_SetSolenoidDefaultPulse(). The sketch never called it. Now called once
+    after RPU_InitializeMPU() for all six drop-target reset coils (SOL_DROP_L_TOP/BOTTOM, R_TOP/BOTTOM,
+    CENTER_LEFT/RIGHT) with DROP_TARGET_RESET_PULSE_MS = 60. The 300 ms bank stagger from v6 is kept.
+    (v7 confirmed working on the machine: drop targets reset and latch; coils hit slightly harder than stock.)
+v8  Game over tune on the original sound board: when the last ball ends, the four chimes play as a descending run
+    (10,000 / 1,000 / 100 / 10) and the 10,000 chime once more, 220 ms apart (PlayGameOverTune(),
+    GAME_OVER_TUNE_NOTE_MS, GAME_OVER_TUNE_ENABLED). New scenario 09-game-over-tune.sim.
+    Drop reset pulse unchanged at DROP_TARGET_RESET_PULSE_MS = 60.
+v9  Scoring matched to readings from the stock game: single drop target 100 -> 1,000 (SCORE_DROP_TARGET);
+    completing a bank 1,100 -> 10,000 in all (SCORE_DROP_BANK_COMPLETE 1,000 -> 9,000, on top of the 1,000 for the
+    last target). Center drop targets already matched (10,000). New scenario 10-drop-scores.sim.
+v10 Bullseye scoring checked against stock readings: PH lit = 10,000 and PHO lit = 20,000 already matched the
+    letter table (P/H 10,000, O/E 20,000, N/I 30,000, X 40,000, as printed on the playfield). Stock gave 60,000 with
+    P-H-O-E lit and the extra ball lit, so collecting the lit extra ball at the bullseye now also scores
+    SCORE_BULLSEYE_EXTRA_BALL = 40,000 on top of the letter value (20,000 + 40,000 = 60,000). Only when the extra
+    ball is actually awarded. Inferred from that one reading. New scenario 11-bullseye-scores.sim.
+v11 Repeatable PHOENIX. With P-H-O-E-N-I-X all lit, completing 1-5 again turns every letter off (and X and the outside
+    specials) and starts a new round (the first set of a round spots P and H together, like the start of a game).
+    Each completion is counted per player (PhoenixCompletions). From the moment of completion, and every 30 seconds
+    after (PHOENIX_BLINK_INTERVAL_MS), all seven lamps blink once per completion (on 250 ms, off 250 ms,
+    PHOENIX_BLINK_PERIOD_MS), then the lamps go back to showing progress. Two completions = two blinks per interval.
+    The count resets each new game. A lit Extra Ball When Lit is kept through a restart. New scenarios
+    12-phoenix-complete.sim and 13-phoenix-complete-twice.sim.
+v12 Fewer extra balls. (1) The limit is now 5 extra balls per player per GAME in total (new ExtraBallsAwarded counter,
+    reset each game); before, it only limited how many were held at once, so playing one off let you earn another.
+    (2) The outside rollover special (after I) is a one-shot: collecting it turns it off and the next completion of 1-5
+    lights it again; before, it paid out on every hit of the lit lane. (3) EXTRA BALL WHEN LIT is lit only when E is
+    spotted (so once per PHOENIX round); before, it relit after every completion of 1-5 from E on.
+    Extra ball sources now: bullseye with the lamp lit, bullseye with X lit (special), outside rollover special.
+    Score awards (330,000 / 500,000) and match are credits, not extra balls. Scenario 03-extra-ball-cap.sim rewritten.
+v13 One letter per completion of 1-5. The first completion used to spot P and H together; now it spots only P, and
+    every completion after that spots exactly one letter: P, H, O, E, N, I, then X (seven completions), and the eighth
+    completes PHOENIX and starts over (v11). Extra Ball When Lit now lights on the fourth completion (E) instead of the
+    third. Scenarios 02, 03, 11, 12 and 13 updated for the new count. Note: the playfield's kickers and side targets
+    also light numbers ("LITES 2/3/4"), so a set of 1-5 can be completed without hitting every rollover.
+v14 Build check. Reported: P and H lit together on the first completion of 1-5, which v13 cannot do (the simulator
+    and the code spot one letter per completion), so the board may still be running an older build. No rule changes.
+    The sketch version (14) now shows on the credits display for the first 8 seconds after power-up
+    (SKETCH_VERSION), and "PhoenixRPU build 14" prints on the serial port. Bump SKETCH_VERSION with each build.
+    New scenario 14-version-display.sim.
+v15 Between games (attract / game over) score displays 2-4 stay blank; only display 1 is used (power-up game version
+    2026, then the high score and the last game's player 1 score, alternating). Displays 2-4 light up again as players
+    are added in a game. SKETCH_VERSION is now 15 (shown on the credits display at power-up). The attract code no
+    longer writes display 1-4 all at once (Display_UpdateDisplays(0xFF) became display 0 only) and blanks displays 2-4
+    each pass. New scenario 15-blank-displays-between-games.sim (two-player game played out, then displays checked
+    during the match and in attract).
+v16 Scores over 1,000,000: instead of blinking, the whole total (millions + six digits) scrolls in from the right
+    across the display, rests on the normal score for 10 seconds, then scrolls again. Works in play and for the last
+    game's score on display 1 in attract. Between games the attract light show now starts after 30 seconds of
+    no switch activity (was 60), then follows the normal pattern (60 s show, 3 min dark, repeat, dark after 30 min).
+    Build number 16 (shown in credits at power-up).
+v17 Nothing scores, and the ball does not count as played, until it has been plunged and reaches one of the
+    1-5 rollovers. A ball that drains before that is simply served again. Stops phantom points (about 1,400)
+    when the ball is fed to the shooter lane and the drop banks reset. Header comment now states the version
+    and what is new. Build number 17.
+v18 Drop banks (4 targets each side) now always stand back up once all four are down. Cause: v17's "nothing scores
+    before the first 1-5 rollover" rule returned early for EVERY switch, including drop targets, so a target that
+    went down before the ball reached a rollover (the right bank sits next to the shooter lane) was never counted;
+    the bank then never saw its 4th target and stayed down. Fixes: (1) drop-target hits made before the first
+    rollover are counted quietly (no points, no bonus, ball still unplayed) and a bank completed that way resets;
+    (2) the reset after the 4th target is now 100 ms (DROP_BANK_COMPLETE_RESET_DELAY_MS, was 500 ms);
+    (3) backstop CheckDropBankBackstop(): if all four switches of a bank stay closed for 250 ms and no reset was
+    asked for in the last 2.5 s, the bank is reset (no points), at most 3 times per bank per ball so a stuck
+    switch cannot fire the coils forever. Also: the serial monitor (115200) now prints every number lamp change
+    ("Number 2 lit, lamps now 02"), "1-5 complete: number lamps cleared", the letter count after each spot, and
+    "PHOENIX complete: all letters off" -- added to chase the report of lamp 2 going out with no letter; the
+    simulator could not reproduce that one, so the log will show what the code did. Build number 18.
+    New scenarios 20-bank-after-rollover, 21-bank-hits-before-rollover (failed on v17, passes now),
+    22-gate-still-holds, 23-bank-stuck-down.
+v19 The bottom inlanes (left and right INSIDE rollovers) now light the "2" and "4" number lamps, exactly as the
+    top "2" and "4" rollovers do. Before, they scored 1,000, advanced the bonus and reset the centre drop target
+    but never lit a number, so a hit looked like it had not counted and the top rollover then scored the number
+    later (reported on v16 and v18). Per the handbook, the left and right inside rollovers pair with the left and
+    right centre drop targets, as "2" and "4" do. The outside rollovers are unchanged. Build number 19.
+    New scenario 36-inside-rollovers-light-2-4 (fails on v18, passes now). Rules otherwise identical to v18.
+v20 The "nothing scores until the first 1-5 rollover" rule (v17) now applies to BALL 1 ONLY, and on ball 1 the
+    spinner also counts as a first hit, because a first ball can miss the top rollovers and go down the ramp to the
+    spinner. From ball 2 on (any player) every switch scores immediately. Trade-off: on balls 2 and up the ball is
+    "in play" from its first switch of any kind, so a ball that drains after only switch noise during the feed is no
+    longer served again, and the early phantom points seen on ball 1 before v17 can come back on later balls.
+    Build number 20. New scenarios 24-ball1-spinner-opens and 25-ball2-scores-immediately (both fail on v19);
+    22-gate-still-holds now checks drop targets and a jet only (the spinner no longer belongs in it).
+v21 Drop banks never stood back up mid-ball from ball 2 on (they stayed down until the next ball started). Cause:
+    CountdownBonus() switches the solenoid stack off at the end of every ball, and only InitGamePlay() (start of a
+    GAME) switched it back on. A solenoid push made without the "override" flag is silently dropped while the stack is
+    off, and the bank resets (RequestDropBankReset, and the v18 backstop) are made without it. The resets at the
+    start of each ball and the ball serve use the override flag, which is why those always worked. Fix: InitNewBall()
+    now calls RPU_EnableSolenoidStack(). This bug is older than v17 and also hit v16 and earlier on balls 2+.
+    New scenario 26-bank-resets-ball2 (fails on v20, passes now). Build number 21.
+v22 Startup sound at the beginning of every game, on the original sound board only. When the Start button begins a game,
+    InitGamePlay() calls the new PlayStartupTune(): a rising run of the four chimes (10 / 100 / 1,000 / 10,000, 150 ms
+    apart, first note 100 ms after Start) and the 10,000 chime twice more after a short pause (about 1 s in all). It is the
+    mirror image of the v8 game over tune and uses the same sound coils and pulse strength. STARTUP_TUNE_ENABLED,
+    STARTUP_TUNE_NOTE_MS and STARTUP_TUNE_START_DELAY_MS tune it. It plays once per game (not when a player is added
+    on ball 1). Not tested in the simulator (rpu-sim is macOS only); needs a listen on the machine. Build number 22.
+v23 COMBO CODES + RACE THE CLOCK (RULES_COMBO_CODES and RULES_RACE_CLOCK, both true; each can be used alone, both false = classic v21 rules).
+    Combo codes: a letter is earned by hitting the five top 1-5 rollovers in that letter's code, every code using each shot once.
+      P 1-2-3-4-5, H 5-4-3-2-1, O/E/N/I/X and the restart step (after X) get a random order, picked once per player per game
+      (reseeded each game; losing and re-earning a letter gives the same code). Progress starts over each ball and after any wrong
+      shot. The code shows in the left five digits of the score display: at ball start (until the ball is plunged plus 3 s), after
+      a wrong shot, and when a letter becomes current, for 3 s. P, H, O and E show it every time; N, I, X and the restart code only
+      once, when they become current (COMBO_HIDDEN_FROM_STEP). P, H, O blink the next shot as a hint (COMBO_HINT_THROUGH_STEP).
+      Hit shots light steady; a wrong shot flashes the lit lamps fast for 1 s; a completed code flashes all five 3 times. The
+      current letter slow-blinks. The same lane twice within 400 ms counts once. ONLY the five top rollovers are shots: kickers,
+      side targets and inside rollovers no longer light 1-5 (they still score and the inside rollovers still reset the centre
+      drop targets). With the clock off, I has a 30 s and X a 20 s timer from their first shot.
+    Race the clock: the letter being worked on has a countdown, P 2:30, H 2:15, O 2:00, E 1:45, N 1:30, I 1:15, X 1:00 (the
+      restart step after X also 1:00); earning a letter or losing one starts that letter's full time. The clock starts at the first
+      top 1-5 rollover of a ball and pauses at drain or ball save until the next ball's first rollover; time carries over. Status
+      display: seconds in the credit digits (last 10 s blink), over 99 s minutes in the credit digits and seconds in the ball digits
+      (ball number hidden). Timeout loses one letter (X first, then I, N, ...) with three falling chimes; E lost turns the lit
+      extra ball off, I lost turns the outside specials off. Timeout on P ends that player's game only: flippers go off, the ball
+      drains, the bonus counts, and that player is skipped from then on; the game ends when everyone is out.
+      Spinner +2 s per spin, up to 20 s per ball. Both drop banks completed once lights the bullseye for time: lamp 16 blinks
+      (time only) or is solid (extra ball, alone or with time); a bullseye hit adds 15 s, and both banks must be completed again.
+      The extra ball from E can be collected once per game per player (losing and re-earning E does not relight it).
+      Maximum clock 99:59. All numbers are constants at the top of the new code block, to be tuned in play.
+    Not run on the machine or in rpu-sim (macOS only). Logic checked with a host-side test harness (combo sequences, bounce filter,
+    random codes are permutations, clock countdown, timeouts and elimination, pause rules, spinner cap, bullseye lighting, lamp 16,
+    once-per-game E extra ball, status display digits, classic mode unchanged) and the whole sketch passes a syntax check against
+    stub Arduino headers; it has not been compiled with the AVR toolchain. Build number 23.
+v24 RULESET SELECTION + NEXTION DISPLAY. Four rulesets, chosen between games with the reed switch button on switch 04 (right coin, SW_COIN_3):
+      1 CLASSIC REBORN (default; exactly what v22 played: v21 rules plus the startup tune), 2 COMBO CODES, 3 RACE THE CLOCK,
+      4 COMBO CODES + CLOCK (the v23 rules). Power-up always selects Classic reborn, so no press is needed to play it.
+      RULES_COMBO_CODES / RULES_RACE_CLOCK are now run-time flags set by the selected ruleset (ApplyRuleset), not compile-time switches.
+    Button: each press in attract mode moves to the next ruleset (wraps 4 -> 1) and plays two rising chimes (1,000 then 10,000) on the
+      original sound board. During a game a press plays one low chime (10) and changes nothing. Presses closer than 400 ms count once.
+      Switch 04 no longer adds coins (free play anyway); the right coin switch is now the button in attract and in game.
+    Display: Nextion 4.3" on Serial2 (Mega pins 16/17), 115200. Text components on page 0: t_idx ("RULESET 2 OF 4", "(DEFAULT)" on the
+      first, or "NOW PLAYING" in a game), t_name, t_rules and t_hint ("Press the button to change ruleset", hidden in a game). The screen
+      is sent at power-up, on entering attract mode, on every button press, at the start of a game, and every 8 s in attract mode (covers a
+      display that boots late). Commands are the usual ASCII ending in three 0xFF; bkcmd=0 so the display sends nothing back. If no
+      display is connected nothing changes. Requires the Nextion project in the display setup guide to be loaded on the display.
+    Not run on the machine or in rpu-sim. Host-side test harness extended (cycle order and wrap, flags per ruleset, chimes, lockout, in-game
+    press, screen commands, text lengths) plus the v23 tests; Classic reborn behaviour re-checked; whole sketch passes a syntax check
+    against stub headers; not compiled with the AVR toolchain. Build number 24.
+
+v25 IN-GAME NEXTION SCREEN. During a game the display now shows live game information instead of the rules text. Only what changed is
+    sent (a couple of commands per game-loop pass), so the loop is never held up by the serial port.
+      Combo codes: the current code is shown large, one digit per box (t_c0-t_c4). Shots already hit are ember brown, the next shot is yellow,
+        the rest orange; digits flash red after a wrong shot and green when the code is complete. N, I, X and the restart code follow the
+        same hide-after-3-seconds rule as the score display and show - until hit (NX_ALWAYS_SHOW_CODE 1 shows them on the screen always).
+      Race the clock: the clock (M:SS) is shown big, orange under 30 s and red under 10 s. In the last 10 seconds the display switches to
+        a red 10-to-1 countdown: with combo codes it replaces the letter box (so the code stays visible); without combo codes a huge
+        countdown (t_count) covers the screen.
+      Callout line (t_call): the latest event (WRONG SHOT, CODE COMPLETE, SPINNER +2 SEC, BULLSEYE +15 SEC, BULLSEYE LIT FOR TIME,
+        TIME UP - LOST A LETTER / GAME OVER, LETTER EARNED, PHOENIX COMPLETE!) or the next target to shoot ("NEXT SHOT: 3").
+        NextionCallout(text, ms) can be called from any rule to name a target.
+      Look (from the backglass): blue-sky and flame background picture (phoenix_bg_480x272.png), title-yellow serif lettering, orange
+        7-segment digits for the code and the clock (the sketch switches t_big between the 7-segment and serif fonts, NX_FONT_*).
+      Classic reborn and combo-only show the PHOENIX progress (P H O _ _ _ _). Top line: player, ball and ruleset.
+      New components on the Nextion page 0 (t_top, t_letter, t_c0-t_c4, t_big, t_count, t_call) are shown and hidden with vis; the
+        ruleset screen components are hidden during a game and shown again in attract mode (see the setup guide).
+      Host tests: ALL TESTS PASSED; whole-sketch syntax check 0 errors. Not compiled with the AVR toolchain and not run on the display.
+
+v26 RULES ON DEMAND DURING A GAME. Pressing the reed switch button (switch 04) during a game still plays the one low tone and never changes the
+    ruleset, and now the Nextion also shows the rules of the ruleset being played for 10 seconds (title "RULES OF THIS GAME", hint "Back to
+    the live display in 10 seconds"), then the live game screen returns. A second press while the rules are up returns to the live screen
+    right away, and so does the start of a race-the-clock last-10-seconds countdown. The game and its clock keep running while the rules
+    are shown. Only in normal play; in other game states (ball over, bonus) the button just plays the tone.
+    Host tests: ALL TESTS PASSED; whole-sketch syntax check 0 errors. Not compiled with the AVR toolchain and not run on the display.
+
+v27 COMBO CODES USE NINE TARGETS. A code step can now be any of: the top rollovers 1-5, LB (any target of the left drop bank), RB (right bank),
+    SP (spinner) or BE (bullseye). P stays 1-2-3-4-5 and H stays 5-4-3-2-1; every other letter's code is five steps picked at random
+    (no target twice in a row, at least one non-rollover). Only code targets count: any wrong one resets the code, other switches are ignored.
+    One shot per burst: the same target within 0.4 s (rollovers), 0.8 s (a bank, the bullseye) or 2 s (spinner, kept open while it spins)
+    counts once (ComboIgnoreMs). The race clock now also starts on the first bank, spinner or bullseye code shot.
+    Display: the five code boxes show 1-5, LB, RB, SP, BE (serif font 0, about 44 px, boxes 70 px wide, letter box 96 px wide) and the callout
+    names the next target (NEXT SHOT: LEFT BANK). The score display shows digits (LB 6, RB 7, SP 8, BE 9). Rollover lamps still light for rollover
+    steps; the other targets are shown on the Nextion only. Rules texts of rulesets 2 and 4 updated.
+    Host tests: ALL TESTS PASSED (code generation, bank/spinner/bullseye steps, bounce windows, display labels); syntax check 0 errors.
+    Not compiled with the AVR toolchain and not run on the machine or the display.
+
+v28 COMBO CODES ARE A CHECKLIST (ANY ORDER). The fixed order of v27 is gone. Each letter now has a checklist of targets; hit them all, in any
+    order, to earn the letter. Nothing resets on a wrong shot - targets that are not on the list (or already ticked) are simply ignored.
+      Items: the rollovers 1-5 (ONE item: all five lit, any order; "1" or "5" lights both like the classic rules), LB (any target of the left
+        bank), RB (right bank), SP (spinner, ticks on its first spin), BE (bullseye).
+      Checklist size: P 1 item (the rollovers), H 2 (rollovers + one more), O 3, E 3, N 4, I 4, X 5, then the restart step 3. Items are picked
+        at random once per player per game (P and H always include the rollovers); the order on the screen is always 1-5, LB, RB, SP, BE.
+      Race the clock starts with the first valid target of the checklist. Without the clock, I and X still have their time limit from the first
+        valid target (30 s / 20 s); too slow = the checklist starts over ("TOO SLOW - START OVER"). A new ball also starts the checklist over.
+      Nextion: the boxes show the letter's items (1-5, LB, RB, SP, BE), unused boxes are blank. To do = orange, done = green, rollovers in
+        progress show 1/5 ... 4/5 in yellow. The callout names each tick ("SPINNER DONE", "ROLLOVERS 1-5 DONE"), then "CHECKLIST COMPLETE";
+        the rest of the time it lists what is left ("TO DO: LB RB SP BE"). The checklist is always on the screen (no hiding of N, I, X).
+      Score display: digits of the items still to do, left aligned, for 3 s (and until the ball is plunged): 1 = rollovers, 2 = LB, 3 = RB,
+        4 = SP, 5 = BE. Rollover lamps show the rollover progress when the rollovers are on the list, and flash when the checklist is complete.
+      Removed: wrong-shot reset and flash, bounce windows (ComboIgnoreMs), hint blink, hide-after-3-seconds (COMBO_HIDDEN_FROM_STEP,
+        NX_ALWAYS_SHOW_CODE), COMBO_WRONG_FLASH_MS. Rules texts of rulesets 2 and 4 reworded.
+    Host tests: ALL TESTS PASSED (checklist generation, any-order ticking, ignored targets, rollover progress, I timer, display, lamps, screen
+    commands); Classic reborn re-checked; whole-sketch syntax check 0 errors. Not compiled with the AVR toolchain and not run on the machine
+    or the display.
+
+v29 iSCORED QR CODE AFTER EACH GAME. When a game ends and the machine goes to attract mode, the Nextion shows a full-screen picture component
+    (p_qr, 480 x 272) holding the Phoenix iScored QR code (https://iScored.info/109818) for 30 seconds (NX_QR_VIEW_MS), then the rules screen
+    returns. Pressing the reed switch button ends it early (the ruleset changes as usual); starting a new game hides it. While it is up the
+    show command is resent every 8 s in case the display was still starting up. It is not shown at power-up, only after a game
+    (CurrentNumPlayers > 0 on entering attract mode). New: NextionShowQr(), NextionQrUpdate(), NxQrUntil.
+    Needs the picture added in the Nextion Editor: import qr_screen_480x272.png, add a Picture component named p_qr at 0,0 (480 x 272),
+    initially hidden (vis 0), and put it LAST in the component list so it sits on top.
+    Host tests: ALL TESTS PASSED (QR shown, resend, expiry at 30 s, button press, new game, nothing sent when idle); Classic reborn re-checked;
+    whole-sketch syntax check 0 errors. Not compiled with the AVR toolchain and not run on the machine or the display.
+
+v30 SMOOTHER MILLIONS SCROLL, SMARTER BANK RESET, NEW "5 EASY" RULESET.
+    1) Millions scroll (all rulesets): the scroll now steps every 130 ms (was 180) and the display is written only when the picture
+       changes (or when the score changed underneath it), instead of on every pass of the game loop. Rewriting every pass let the normal
+       score flash through between writes, which showed most with a narrow "1" in the leading position (1,xxx,xxx). New:
+       MillionsLastFrame[], MillionsLastStamp[]. Host-simulated: 1 / 12 / 123 / 1234 / 12345 / 123456 then the normal score, one write per
+       step, no extra writes. Tune MILLIONS_SCROLL_STEP_MS (100-180) if you want it faster or slower.
+    2) New ball (all rulesets): a drop target bank is only popped up for the next ball if at least one of its four targets is down
+       (read from the switches). A bank that is still standing is left alone. Mid-ball resets after you complete a bank are unchanged.
+    3) New fifth ruleset "5 EASY" (the reed/button now cycles five rulesets; NUM_RULESETS 5, RulesFiveEasy, RulesetUsesFiveEasy[],
+       HandleCenterDropTarget()). Classic rules, but the left centre drop target (A) also counts as rollover "1" and the right one (B) as
+       rollover "5": each scores the rollover points and bonus advance on top of its own score, lights the lamps and counts toward the
+       1-5 set exactly like the real rollover (so, as in the classic rules, "1" or "5" lights both). A and B still reset from the
+       inlane rollovers 2 and 4. Other rulesets are unchanged. Nextion shows "5 EASY" as the ruleset name; the rules text is 235 chars.
+       The ruleset index is now "RULESET n OF 5". Nextion setup: nothing new to build, the text boxes already take the longer list.
+    4) Separate builds: new #define FIXED_RULESET (255 = combined build with push button + screen; 0-4 = always that ruleset, button ignored,
+       screen optional). Delivered as six PhoenixRPU.ino files: combined, Classic Reborn, Combo Codes, Race the Clock, Combo + Clock, 5 EASY.
+       The single-ruleset files differ from the combined one only in that line and the version comment. All six pass the syntax check.
+    Host tests: ALL TESTS PASSED (5-ruleset cycle and wrap, 5 EASY A/B behaviour and that other rulesets are unaffected, text lengths);
+    Classic reborn re-checked; whole-sketch syntax check 0 errors. The bank reset and the scroll smoothness are not covered by the host
+    tests beyond the frame simulation. Not compiled with the AVR toolchain and not run on the machine or the display.
+
+
+v31 MODE BUTTON ON THE LEFT COIN SWITCH. The push button is wired in parallel with the left coin door switch (switch 06, SW_COIN_1), so
+    MODE_BUTTON_SWITCH is now SW_COIN_1 (was SW_COIN_3, the right coin). Three things had to change with it:
+    - Attract-mode switch loop: the coin test was "SW_COIN_1 || SW_COIN_2"; it is now "SW_COIN_2 || SW_COIN_3", so a button press no longer
+      adds a credit.
+    - HandleSystemSwitches: "case SW_COIN_1" removed from the coin case and "case SW_COIN_3" added (otherwise duplicate case labels).
+    - Coins now come from the center (SW_COIN_2) and right (SW_COIN_3) chutes; the left chute is the button. Free play is forced on anyway.
+    Comments and the header text that said "switch 04 (right coin)" now say switch 06 (left coin). SKETCH_VERSION 31 (credits display at power-up).
+    Behaviour unchanged: between games each press = next ruleset + chime, in a game a press = one low tone and the rules on the screen for 10 s,
+    400 ms debounce, power-up starts on ruleset 0. Nextion stays on Serial2 (D16 TX2 to display RX, D17 RX2 from display TX).
+    Checks: whole-sketch syntax check 0 errors for all six builds (no duplicate case labels); host tests ALL TESTS PASSED. Not compiled
+    with the AVR toolchain and not run on the machine.
+
+
+v32 ATTRACT-MODE PHOENIX ANIMATION on the Nextion display.
+    In attract mode the display shows an animated cartoon phoenix (wings flapping, sparks rising) with the PHOENIX title. It is 12
+    full-screen 480 x 272 pictures (anim/phoenix_anim_00..11_480x272.png; third artwork pass: a glowing flame phoenix on black,
+    outlined feathers, soft particle fire along the wings and tail; an original drawing) shown one after
+    another by a picture component p_anim, one frame every NX_ANIM_FRAME_MS (110 ms). New: NX_ANIM_FRAMES, NX_ANIM_FRAME_MS,
+    NX_ANIM_PIC_FIRST (Nextion picture ID of the first frame, default 2), NX_RULES_IDLE_MS (60 s), NxAnimActive, NextionShowAnim(),
+    NextionAnimUpdate(), NextionSendAnimFrame().
+    Behaviour:
+    - Power-up and every return to attract mode: the bird. After a game: iScored QR code for 30 s, THEN the bird (it used to be the rules).
+    - Start button: the bird gives way to the game select (rules) screen; the start press still starts the game as before.
+    - Game select (push) button: the first press only wakes the display to the game select screen and plays one chime (the ruleset does not
+      change, so you see what is selected); each further press changes the ruleset as before. In the single-ruleset builds the button still
+      wakes the screen but selects nothing.
+    - The game select screen returns to the bird after 60 s without any switch activity.
+    - The bird is hidden when a game starts. The show command is repeated every 8 s so a display that boots late still gets it.
+    Nextion project: import the 12 pictures IN ORDER after your existing pictures, add a Picture component named p_anim at 0,0
+    (480 x 272, visibility hidden), put it LAST in the component order (above p_qr), and set NX_ANIM_PIC_FIRST to the ID of
+    phoenix_anim_00 (Picture window in the Editor; the IDs start at 0). Details in the setup guide.
+    Checks: host tests ALL TESTS PASSED (frame stepping and wrap, wake-only button press, start press, game start hides the bird,
+    QR then bird, resend); Classic reborn re-checked; whole-sketch syntax check 0 errors for all six builds. Not compiled with the AVR
+    toolchain and not run on the display. Picture changes redraw a full screen about 9 times a second; if the display flickers, raise
+    NX_ANIM_FRAME_MS (140-200).
+    Also moved: AttractShowIdleStart is now declared next to LastNextionRefresh (it is used earlier in the file).
+
+v33 (number used by V33.E, the Waveshare ESP32 panel branch made from v32; kept separate in RPU\ESP32\Sketches.
+    V33.E does not have the v34 changes below.)
+
+v34 BONUS COUNTDOWN AT MOST 5 SECONDS, MATCH AWARDS ONE MORE BALL. Nextion line, built from v32 (all six builds).
+    (1) Bonus countdown. The whole end-of-ball countdown, every step plus the pause after the last one, now takes at most
+    5 seconds (BONUS_COUNTDOWN_MAX_MS 5000). When the countdown starts it counts its steps (bonus lights x multiplier, plus one
+    step at the end of each multiplier pass) and limits the step time to what fits (BonusStepCapMs). Small bonuses still count
+    at the old pace (130 ms per step for the first passes); the pause after the last step is 500 ms (was 1,000 ms,
+    BONUS_COUNTDOWN_END_PAUSE_MS). Steps are timed from when they were due, so loop delays don't add up. Every step still
+    scores 1,000 and plays its sound. Worst case (29K bonus at 5X = 150 steps, about 29 ms each): 4.8 s; 3K at 1X: about 1.0 s
+    (was about 1.5 s); 10K at 2X: about 3.4 s.
+    (2) Match = one more ball. Free play, so a match no longer adds a credit. When the last regular ball ends, the match runs
+    first (flippers off, scores shown, GAME OVER lamp on while the digits spin). Each player whose last two digits match gets
+    one more ball (knocker, "shoot again" call, Nextion callout MATCH - ONE MORE BALL): the backbox goes back to ball in play,
+    the flippers come back on, and that player plays a ball (shown as the last ball), keeping everything they had: letters,
+    clock, combo progress, banked extra balls. With several matching players they play in player order. The match runs once
+    per game, so there is no second match after the match balls. A player whose game ended on the clock (out on P) gets no
+    match ball. High score check, game over sound and game over tune now happen when the game is really over (after the
+    match if nobody matched, or after the last match ball). New: MatchBallsPending, MatchPlayedThisGame, EndOfGame().
+    With the match feature off in the operator menu the game ends straight away as before.
+    Version number 34 on the credits display at power-up.
+    Checks: compiled for the Mega 2560 with avr-gcc and the Arduino AVR core, all six builds, no errors; one warning, the same
+    one v32 has (sprintf in NextionUpdateGame, theoretical). RAM about 5.3 KB of 8 KB. New host test of the countdown and match
+    code taken straight from the sketch: every bonus 1-29 at 1X-5X finishes within 5 s (loop step 2 ms and 7 ms); 400 two-player
+    games with random match digits: no match = game over once; match = one ball per matching player in order, then game over
+    once; banked extra ball on a match ball is played; player out on the clock never gets a match ball; match feature off =
+    straight to game over. ALL PASS. Not run on the machine or in rpu-sim.
+
+v35 NEW ATTRACT-MODE ANIMATION on the Nextion display (Kurt's flaming phoenix, from Drive ...\RPU\Nextion\Phoenix-split).
+    The source is 42 GIF frames, 640 x 496, 60 ms each. Every second frame is used (21 frames) at 120 ms per frame, so one loop
+    still takes about 2.5 s like the original, at a rate the Nextion can redraw full-screen pictures. Each frame is cropped
+    (top 45 px of scan-line junk and the bottom 31 px), scaled to 338 x 222 and placed top-centre on a 480 x 272 picture, with a
+    glowing PHOENIX title underneath (gold letters, dark red outline, orange glow; DejaVu Serif Condensed Bold, as in the v32
+    frames). The source's background flips between blue-black and brown-black from frame to frame (GIF palette), so the dark
+    background is replaced by one steady blue-to-black background that also fills the margins. Files: anim/phoenix_anim_00..20_480x272.png,
+    anim/phoenix_anim_preview.gif, anim/contact_sheet.png, anim/convert_frames.py.
+    Sketch: NX_ANIM_FRAMES 12 -> 21, NX_ANIM_FRAME_MS 110 -> 120. NX_ANIM_PIC_FIRST stays 2.
+    Nextion project: delete the 12 old phoenix_anim pictures and import the 21 new ones in order after the background (0) and
+    the QR picture (1), so they get IDs 2 to 22. No component changes (p_anim stays where it is).
+    Version number 35 on the credits display at power-up. Game rules are unchanged from v34.
+    Checks: compiled for the Mega 2560 (avr-gcc + Arduino AVR core), all six builds, no errors; the one known warning from v32.
+    Not run on the display yet.
+
+v36 COMBO CODES: CURRENT LETTER NO LONGER BLINKS. In Combo Codes and Combo Codes + Clock the lamp of the PHOENIX letter being
+    worked on used to blink (slow, or fast while the I/X timer ran without the clock; added in v23, never asked for). Now the
+    letter lamps stay off until earned and earned letters are lit steady, as in Classic. ShowComboLamps() no longer sets the
+    letter lamp. Unchanged: the completed-PHOENIX blink every 30 s, the Race the Clock flash of a lost letter, the rollover lamps.
+    Version number 36 on the credits display at power-up.
+    Checks: compiled for the Mega 2560 (avr-gcc + Arduino AVR core), all six builds, no errors; the one known warning from v32.
+    Not run on the machine.
+
+v37 EXTRA BALLS ON THE NEXTION GAME SCREEN. When the current player has extra balls banked (waiting to be played), the top
+    line ends with EB n, e.g. "P1  BALL 2  CLASSIC  EB 2". To fit, the ruleset name on that line is shortened while EB shows:
+    CLASSIC, COMBO, CLOCK, COMBO+CLK, 5 EASY (longest line 27 characters, inside the 28-character limit; snprintf now caps the line, so it can never overrun the buffer). With no extra balls
+    waiting, or for a player out on the clock, the line is as before. The number drops by one when a ball drains and the
+    extra ball is played, same as the Shoot Again lamp blinks. No Nextion project change. Example screens:
+    display_extra_balls_examples.png. Version number 37 on the credits display at power-up.
+    Checks: compiled for the Mega 2560, all six builds, no errors; the compiler notes the top line "may be truncated" (it cannot, real lines are 27 characters or less; the old v32 overflow warning is gone); the top line rendered for
+    all five rulesets with the v37 display code in the virtual Nextion, no overflow. Not run on the machine.
+
+v38 STEADY SCORE DISPLAY AND 1-5 FROM ALL ITS SWITCHES IN COMBO CODES.
+    (1) Score display. Three things wrote the current player's display in the same game-loop pass: Display_UpdateDisplays
+    (the score, every pass), the combo checklist digits (Combo Codes: at ball start until the plunge plus 3 s, at each new
+    letter and after the I/X timer) and the millions scroll; the display alternated between them, which looked like a
+    flickering scroll. Now: the combo checklist is no longer drawn on the score display (the Nextion shows it); the library's
+    rolling-dash effect after 2 s without scoring is turned off (dashCurrent false), in all rulesets; a display that is in the
+    scrolling part of its millions cycle is skipped by Display_UpdateDisplays (new MillionsScrolling(); the game loop updates
+    the other displays one by one), in play and on display 1 in attract. The millions scroll is slower, 300 ms per digit
+    (MILLIONS_SCROLL_STEP_MS, was 130), then the normal score for 10 s. Under 1,000,000 nothing scrolls. The score still
+    flashes at ball start until the first switch, as before.
+    (2) Combo Codes and Combo Codes + Clock: the switches that light 1-5 lamps in Classic now also count toward the 1-5
+    checklist item: left/right inside rollovers (2/4), left/right kickers (2/4) and the side targets (3), as well as the top
+    rollovers. LightNumber() passes them to ComboHandleShot() instead of ignoring them. Classic, Race the Clock and 5 EASY
+    already counted them and are unchanged.
+    Version number 38 on the credits display at power-up.
+    Checks: compiled for the Mega 2560, all six builds, no errors (the two harmless top-line notes from v37). Host test of the
+    new display code taken from the sketch: a player at 2,123,456 scrolls 2, 21, 212, 2123, 21234, 212345, 123456 at 300 ms
+    steps every 11.8 s, with no pass writing two different values to one display. Not run on the machine.
+
+v39 BALL FALL-BACK IS NOT A DRAIN. When the outhole kicker serves a ball and the ball lands back on the outhole switch within
+    2 seconds of the kick (BALL_FALLBACK_MS 2000; measured from the kick to the moment the ball arrives back, before the usual
+    0.75 s settle), the ball never reached the shooter lane: it is kicked out again and play carries on, instead of ending the
+    ball. This works in every ruleset and on every ball, even if a switch closed in the meantime (kick vibration); before, only
+    a ball with no switch hit yet was served again. Applies to the kick at each ball start and to ball-save re-serves; every
+    kick now records its time in LastTimeBallServed. Not when tilted. Repeats as often as needed.
+    Version number 39 on the credits display at power-up.
+    Checks: compiled for the Mega 2560, all six builds, no errors (the two harmless top-line notes from v37). Host test of the
+    outhole code taken from the sketch: back 1.5 s after a kick with a switch hit = kicked again; back twice in a row = kicked
+    twice; back 3.5 s or 10 s after the kick = drain; tilted = drain. ALL PASS. Not run on the machine.
+
+v40 HIGH SCORES AFTER A GAME. After each game the Nextion shows the iScored QR code and a high-score screen in turn, swapping
+    every 3 seconds (NX_QR_SWAP_MS) for 60 seconds (NX_QR_VIEW_MS, was 30 s of QR only), then the phoenix animation. The
+    high-score screen: HIGH SCORE (NEW HIGH SCORE! if this game beat it; new flag NewHighScoreThisGame set in CheckHighScores)
+    with the machine's high score in large type, then THIS GAME: and each player's final score (millions included, with
+    commas), and SCAN THE QR CODE FOR ISCORED. It uses the ruleset-screen boxes (t_idx, t_name, t_rules, t_hint), so no Nextion
+    project change. A button press or Start still ends it early. New: NextionShowHighScores(), FormatScoreCommas().
+    Version number 40 on the credits display at power-up. Example screens: display_high_scores_examples.png.
+    Checks: compiled for the Mega 2560, all six builds, no errors (the two harmless top-line notes from v37); the QR and
+    high-score screens rendered from the v40 code in the virtual Nextion, all text fits. Not run on the machine.
+
+v41 THE NUMBER THAT COMPLETES 1-5 COUNTS ONCE. In every ruleset, when a number completes the 1-5 set (e.g. 3), a repeat of
+    that same number within 1 second (NUMBER_REPEAT_LOCK_MS; a switch bounce or the ball rolling back over it) is ignored,
+    so it no longer lights that number for the next letter as well. For 1 and 5, which light each other, both are locked.
+    The ball has to come back and cross the number again to light it for the next letter. Other numbers count straight
+    away; the hit still scores as before. Applies to the top rollovers, inlanes, kickers and side targets (LightNumber),
+    and to the 1-5 checklist item in Combo Codes (ComboHandleShot). New: NumberLocked(), LockCompletingNumber().
+    Version number 41 on the credits display at power-up.
+    Checks: compiled for the Mega 2560, all six builds, no errors (the two harmless top-line notes from v37). Host test of
+    LightNumber from the sketch: complete with 3, repeat at 50 ms and 450 ms ignored, crossed again at 1.45 s counts; another
+    number right after completion counts; complete with 5: 1 and 5 both locked. ALL PASS. Not run on the machine.
+
+==============================================================================
+LATEST (v41) vs PREVIOUS (v40): unified diff of PhoenixRPU.ino (combined build)
+==============================================================================
+--- v40
++++ v41
+@@ -1,11 +1,15 @@
+ /**************************************************************************
+     PhoenixRPU - custom rules for Williams Phoenix (1978)
+-    VERSION: v40 (SKETCH_VERSION 40, shown on the credits display at power-up). Nextion line
+-    (V33.E is the separate Waveshare ESP32 panel branch and does not have the v34-v40 changes).
+-    NEW IN THIS VERSION (vs v39): HIGH SCORES AFTER A GAME. For 60 seconds after each game the Nextion swaps every 3 seconds
++    VERSION: v41 (SKETCH_VERSION 41, shown on the credits display at power-up). Nextion line
++    (V33.E is the separate Waveshare ESP32 panel branch and does not have the v34-v41 changes).
++    NEW IN THIS VERSION (vs v40): COMPLETING NUMBER COUNTS ONCE. In every ruleset, the number that completes 1-5 (e.g. 3)
++    no longer also lights for the next letter if the switch closes again straight away (bounce or the ball rolling back):
++    repeats of that number (and of its partner for 1/5) within 1 second of completing are ignored, so the ball has to come
++    back and cross it again. Scoring of the hit is unchanged.
++    (v40: HIGH SCORES AFTER A GAME. For 60 seconds after each game the Nextion swaps every 3 seconds
+     between the iScored QR code and a high-score screen: HIGH SCORE (or NEW HIGH SCORE! when this game beat it) with the
+     machine's high score, and each player's final score of the game. Then the phoenix animation as before. Uses the
+-    existing ruleset-screen boxes, so no Nextion project change.
++    existing ruleset-screen boxes, so no Nextion project change.)
+     (v39: BALL FALL-BACK. If a ball kicked out of the outhole lands back on the outhole switch within
+     2 seconds (BALL_FALLBACK_MS), it never reached the shooter lane: it is kicked out again instead of counting as a drain,
+     in every ruleset, on every ball (even if a switch was hit meanwhile). Applies to ball starts and ball-save re-serves.)
+@@ -1424,9 +1428,11 @@
+   if (RULES_RACE_CLOCK && !PlayerOut[player]) ClockRunning = true;      // the race clock starts with the first valid target
+ 
+   if (item == ITEM_ROLLOVERS) {
++    if (NumberLocked(shot)) return;                                      // v41: same number again right after completing 1-5
+     RolloversLit[player] |= (1 << shot);
+     if (shot == 0 || shot == 4) RolloversLit[player] |= 0x11;           // "1" and "5" light both, as in the classic rules
+     if ((RolloversLit[player] & 0x1F) != 0x1F) return;                   // still some rollovers to go
++    LockCompletingNumber(shot);                                          // v41
+   }
+ 
+   ComboDone[player] |= bit;
+@@ -2208,12 +2214,28 @@
+   RPU_PushToTimedSolenoidStack(left ? SOL_DROP_CENTER_LEFT_RESET : SOL_DROP_CENTER_RIGHT_RESET, DROP_TARGET_RESET_STRENGTH, CurrentTime + 100, true);
+ }
+ 
++// v41: the number that completes 1-5 does not also count for the next set. A second hit of that same number (or its
++// partner, for "1"/"5") within NUMBER_REPEAT_LOCK_MS of completing is ignored: a bounce or the ball rolling back over the
++// switch. The ball has to come back and cross it again to light it for the next letter.
++#define NUMBER_REPEAT_LOCK_MS         1000
++byte NumberLockMask = 0;
++unsigned long NumberLockUntil = 0;
++boolean NumberLocked(byte index) {
++  if (!NumberLockMask || CurrentTime >= NumberLockUntil) { NumberLockMask = 0; return false; }
++  return (NumberLockMask >> index) & 0x01;
++}
++void LockCompletingNumber(byte index) {
++  NumberLockMask = (index == 0 || index == 4) ? 0x11 : (1 << index);
++  NumberLockUntil = CurrentTime + NUMBER_REPEAT_LOCK_MS;
++}
++
+ // Lights one of the "1"-"5" lamps and spots a letter when all five are lit.
+ // "1" and "5" are both spotted by making either one.
+ void LightNumber(byte index) {
+   // v38: in combo codes the inside rollovers, kickers and side targets count toward the 1-5 item too, like the top rollovers
+   if (RULES_COMBO_CODES) { ComboHandleShot(index); return; }
+   byte player = CurrentPlayer;
++  if (NumberLocked(index)) return;      // v41: same number again right after it completed the set
+   RolloversLit[player] |= (1 << index);
+   if (index == 0 || index == 4) RolloversLit[player] |= 0x11;
+   if (DEBUG_MESSAGES) {
+@@ -2223,6 +2245,7 @@
+   }
+   if ((RolloversLit[player] & 0x1F) == 0x1F) {
+     RolloversLit[player] = 0;
++    LockCompletingNumber(index);        // v41
+     if (DEBUG_MESSAGES) Serial.write("1-5 complete: number lamps cleared\n");
+     SpotLetters();
+   }
+@@ -3161,7 +3184,7 @@
+ 
+ 
+ // Sketch version: shown on the credits display for the first 8 seconds after power-up so you can tell which build is loaded
+-#define SKETCH_VERSION                40
++#define SKETCH_VERSION                41
+ #define SKETCH_VERSION_SHOW_MS        8000
+ boolean SketchVersionShown = false;
+ 
